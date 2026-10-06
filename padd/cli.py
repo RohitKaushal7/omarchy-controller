@@ -194,8 +194,8 @@ def cmd_doctor(args) -> int:
         report(True, f"key codes from {HEADER}")
     except CodesUnavailable as exc:
         report(False, str(exc), "install the linux-api-headers package")
-    # Access can come from the input group or from the seat (systemd's
-    # uaccess ACLs), so test it rather than the group.
+    # Access can come from the input group or from the seat's uaccess ACLs,
+    # so test it rather than the group.
     nodes = linux.event_nodes()
     readable = [n for n in nodes if os.access(n, os.R_OK)]
     report(bool(readable), f"/dev/input is readable ({len(readable)} of {len(nodes)} nodes)",
