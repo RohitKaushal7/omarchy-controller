@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "enabled": true,
+  "device": {
+    "match": [],
+    "grab": false
+  },
+  "timing": {
+    "holdMs": 450,
+    "repeatDelayMs": 350,
+    "repeatMs": 90,
+    "triggerThreshold": 0.3,
+    "hintDelayMs": 350
+  },
+  "mouse": {
+    "enabled": true,
+    "move": "LS",
+    "scroll": "RS",
+    "speed": 1800,
+    "curve": 2.2,
+    "deadzone": 0.15,
+    "scrollSpeed": 22,
+    "scrollCurve": 2.0,
+    "naturalScroll": false,
+    "precision": 0.3,
+    "rateHz": 125
+  },
+  "layers": [
+    {
+      "id": "base",
+      "name": "Browse",
+      "bindings": {
+        "A": {
+          "click": "left",
+          "label": "Click"
+        },
+        "B": {
+          "click": "back",
+          "label": "Back"
+        },
+        "X": {
+          "keys": "PLAYPAUSE",
+          "label": "Play / pause"
+        },
+        "Y": {
+          "exec": "voxtype record toggle",
+          "label": "Dictation"
+        },
+        "LB": {
+          "keys": "SUPER+SHIFT+TAB",
+          "label": "Previous workspace"
+        },
+        "RB": {
+          "keys": "SUPER+TAB",
+          "label": "Next workspace"
+        },
+        "BACK": {
+          "keys": "ESC",
+          "label": "Escape"
+        },
+        "START": {
+          "keys": "SUPER+SPACE",
+          "label": "Omarchy menu"
+        },
+        "GUIDE": {
+          "tap": {
+            "exec": "omarchy-shell dev.reuk.controller hint",
+            "label": "Show buttons"
+          },
+          "hold": {
+            "mouse": "toggle",
+            "label": "Mouse on / off"
+          }
+        },
+        "L3": {
+          "mouse": "precision",
+          "label": "Precision"
+        },
+        "R3": {
+          "click": "right",
+          "label": "Right click"
+        },
+        "UP": {
+          "keys": "UP",
+          "repeat": true,
+          "label": "Up"
+        },
+        "DOWN": {
+          "keys": "DOWN",
+          "repeat": true,
+          "label": "Down"
+        },
+        "LEFT": {
+          "keys": "LEFT",
+          "repeat": true,
+          "label": "Left / seek back"
+        },
+        "RIGHT": {
+          "keys": "RIGHT",
+          "repeat": true,
+          "label": "Right / seek forward"
+        }
+      }
+    },
+    {
+      "id": "text",
+      "name": "Text",
+      "key": "LT",
+      "bindings": {
+        "A": {
+          "keys": "RETURN",
+          "label": "Enter"
+        },
+        "B": {
+          "keys": "BACKSPACE",
+          "repeat": true,
+          "label": "Backspace"
+        },
+        "X": {
+          "keys": "CTRL+BACKSPACE",
+          "repeat": true,
+          "label": "Delete word"
+        },
+        "Y": {
+          "keys": "CTRL+Z",
+          "label": "Undo"
+        },
+        "LB": {
+          "keys": "SUPER+C",
+          "label": "Copy"
+        },
+        "RB": {
+          "keys": "SUPER+V",
+          "label": "Paste"
+        },
+        "BACK": {
+          "keys": "TAB",
+          "label": "Tab"
+        },
+        "START": {
+          "keys": "CTRL+A",
+          "label": "Select all"
+        },
+        "UP": {
+          "keys": "HOME",
+          "label": "Start of line"
+        },
+        "DOWN": {
+          "keys": "END",
+          "label": "End of line"
+        },
+        "LEFT": {
+          "keys": "CTRL+LEFT",
+          "repeat": true,
+          "label": "Word left"
+        },
+        "RIGHT": {
+          "keys": "CTRL+RIGHT",
+          "repeat": true,
+          "label": "Word right"
+        }
+      }
+    },
+    {
+      "id": "system",
+      "name": "System",
+      "key": "RT",
+      "bindings": {
+        "A": {
+          "keys": "F",
+          "label": "Video fullscreen"
+        },
+        "B": {
+          "hold": {
+            "keys": "SUPER+W",
+            "label": "Close window"
+          }
+        },
+        "X": {
+          "keys": "NEXTSONG",
+          "label": "Next track"
+        },
+        "Y": {
+          "exec": "omarchy capture screenshot fullscreen",
+          "label": "Screenshot"
+        },
+        "LB": {
+          "keys": "CTRL+SHIFT+TAB",
+          "label": "Previous tab"
+        },
+        "RB": {
+          "keys": "CTRL+TAB",
+          "label": "Next tab"
+        },
+        "BACK": {
+          "tap": {
+            "keys": "SUPER+CTRL+TAB",
+            "label": "Former workspace"
+          },
+          "hold": {
+            "keys": "SUPER+CTRL+L",
+            "label": "Lock"
+          }
+        },
+        "START": {
+          "keys": "SUPER+F",
+          "label": "Window fullscreen"
+        },
+        "UP": {
+          "keys": "VOLUMEUP",
+          "repeat": true,
+          "label": "Volume up"
+        },
+        "DOWN": {
+          "keys": "VOLUMEDOWN",
+          "repeat": true,
+          "label": "Volume down"
+        },
+        "LEFT": {
+          "keys": "SUPER+LEFT",
+          "label": "Focus left window"
+        },
+        "RIGHT": {
+          "keys": "SUPER+RIGHT",
+          "label": "Focus right window"
+        }
+      }
+    }
+  ]
+}

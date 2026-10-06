@@ -1,0 +1,6 @@
+#!/bin/sh
+# The plugin's CLI and daemon. Pure Python standard library: nothing to build.
+here=$(dirname -- "$(readlink -f -- "$0")")
+python=/usr/bin/python3
+[ -x "$python" ] || python=python3
+PYTHONPATH="$here/..${PYTHONPATH:+:$PYTHONPATH}" PYTHONDONTWRITEBYTECODE=1 exec "$python" -m padd "$@"
