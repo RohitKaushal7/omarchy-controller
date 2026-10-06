@@ -101,6 +101,33 @@ class TestKeys(unittest.TestCase):
             combo("SUPER+BANANA")
 
 
+class TestQuirks(unittest.TestCase):
+    def test_bluetooth_xbox_pad_with_ordered_codes_is_remapped(self):
+        from padd.codes import code
+        from padd.pad import BUS_BLUETOOTH, KEY_BUTTONS, MICROSOFT, ORDERED_XBOX, keymap_for
+
+        # What an Xbox Wireless Controller (045e:02e0) advertises over Bluetooth.
+        ordered = {code(n) for n in ("BTN_SOUTH", "BTN_EAST", "BTN_C", "BTN_NORTH", "BTN_WEST",
+                                     "BTN_Z", "BTN_TL", "BTN_TR", "BTN_TL2", "BTN_TR2", "KEY_MENU")}
+        keymap = keymap_for(BUS_BLUETOOTH, MICROSOFT, ordered)
+        self.assertIs(keymap, ORDERED_XBOX)
+        for name, button in (("BTN_C", "X"), ("BTN_NORTH", "Y"), ("BTN_WEST", "LB"), ("BTN_Z", "RB"),
+                             ("BTN_TL", "BACK"), ("BTN_TR", "START"), ("BTN_TL2", "L3"),
+                             ("BTN_TR2", "R3"), ("KEY_MENU", "GUIDE")):
+            self.assertEqual(keymap[code(name)], button)
+        self.assertEqual(len(set(ORDERED_XBOX.values())), len(ORDERED_XBOX), "a button twice")
+
+        # Wired (xpad) and adapter (xone) pads advertise BTN_SELECT/START/MODE:
+        # standard map, as for any pad that is not Microsoft's.
+        xpad = {code(n) for n in ("BTN_SOUTH", "BTN_EAST", "BTN_NORTH", "BTN_WEST", "BTN_TL",
+                                  "BTN_TR", "BTN_SELECT", "BTN_START", "BTN_MODE",
+                                  "BTN_THUMBL", "BTN_THUMBR")}
+        self.assertIs(keymap_for(0x03, MICROSOFT, xpad), KEY_BUTTONS)
+        self.assertIs(keymap_for(BUS_BLUETOOTH, MICROSOFT, xpad), KEY_BUTTONS)
+        self.assertIs(keymap_for(0x03, MICROSOFT, ordered), KEY_BUTTONS)
+        self.assertIs(keymap_for(BUS_BLUETOOTH, 0x2DC8, ordered), KEY_BUTTONS)
+
+
 class Stick:
     def __init__(self, **sticks):
         self.sticks = sticks

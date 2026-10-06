@@ -49,6 +49,50 @@ KEY_BUTTONS: dict[int, str] = {
     code("BTN_DPAD_RIGHT"): "RIGHT",
 }
 
+BUS_BLUETOOTH = 0x05
+
+MICROSOFT = 0x045E
+
+# Xbox pads on their original Bluetooth firmware number their buttons in a
+# row (A B X Y LB RB View Menu L3 R3), and with no Xbox driver bound,
+# hid-generic hands out gamepad codes in that order, leaving BTN_C and BTN_Z
+# in the middle of it; the Xbox button arrives as KEY_MENU. Measured on an
+# Xbox Wireless Controller (045e:02e0). Sticks, triggers and d-pad report on
+# the usual axes. Over USB (xpad), the wireless adapter (xone) or newer
+# firmware the codes follow their meaning, and the standard map applies.
+ORDERED_XBOX: dict[int, str] = {
+    code("BTN_SOUTH"): "A",
+    code("BTN_EAST"): "B",
+    code("BTN_C"): "X",
+    code("BTN_NORTH"): "Y",
+    code("BTN_WEST"): "LB",
+    code("BTN_Z"): "RB",
+    code("BTN_TL"): "BACK",
+    code("BTN_TR"): "START",
+    code("BTN_TL2"): "L3",
+    code("BTN_TR2"): "R3",
+    code("KEY_MENU"): "GUIDE",
+}
+
+
+def keymap_for(bus: int, vendor: int, keys: set[int]) -> dict[int, str]:
+    """Key code -> button name for one pad.
+
+    Recognised by its codes, not its product id, so every firmware with the
+    in-a-row numbering is covered: BTN_C and BTN_Z mean nothing on an Xbox
+    pad unless the codes are positional, and BTN_START is then never sent.
+    """
+    if (
+        bus == BUS_BLUETOOTH
+        and vendor == MICROSOFT
+        and code("BTN_C") in keys
+        and code("BTN_Z") in keys
+        and code("BTN_START") not in keys
+    ):
+        return ORDERED_XBOX
+    return KEY_BUTTONS
+
+
 HAT = {code("ABS_HAT0X"): ("LEFT", "RIGHT"), code("ABS_HAT0Y"): ("UP", "DOWN")}
 TRIGGERS = {code("ABS_Z"): "LT", code("ABS_RZ"): "RT"}
 STICK_AXES = {
@@ -72,6 +116,8 @@ class Info:
     product: int
     buttons: list[str]
     ranges: dict[int, tuple[int, int]] = field(default_factory=dict)
+    keymap: dict[int, str] = field(default_factory=lambda: KEY_BUTTONS)
+    bus: int = 0
 
     @property
     def is_pad(self) -> bool:
@@ -91,6 +137,7 @@ class Info:
             "phys": self.phys,
             "id": f"{self.vendor:04x}:{self.product:04x}",
             "buttons": self.buttons,
+            "layoutFix": self.keymap is ORDERED_XBOX,
         }
 
 
@@ -102,14 +149,16 @@ def inspect(path: str) -> Info | None:
     try:
         keys = linux.capabilities(fd, linux.EV_KEY, linux.KEY_MAX + 1)
         axes = linux.capabilities(fd, linux.EV_ABS, linux.ABS_MAX + 1)
+        bus, vendor, product = linux.device_ids(fd)
+        keymap = keymap_for(bus, vendor, keys)
         buttons = sorted(
-            {KEY_BUTTONS[k] for k in keys if k in KEY_BUTTONS}
+            {keymap[k] for k in keys if k in keymap}
             | {b for a in axes if a in HAT for b in HAT[a]}
             | {TRIGGERS[a] for a in axes if a in TRIGGERS},
             key=BUTTONS.index,
         )
         # A keyboard or mouse can have stray axes; a pad has face buttons.
-        if not any(k in KEY_BUTTONS for k in keys):
+        if not any(k in keymap for k in keys):
             buttons = []
         ranges = {}
         for axis in axes:
@@ -117,10 +166,9 @@ def inspect(path: str) -> Info | None:
                 found = linux.abs_range(fd, axis)
                 if found:
                     ranges[axis] = found
-        _bus, vendor, product = linux.device_ids(fd)
         return Info(
             path, linux.device_name(fd), linux.device_phys(fd), vendor, product,
-            buttons, ranges,
+            buttons, ranges, keymap, bus,
         )
     except OSError:
         return None
@@ -169,6 +217,7 @@ class Pad:
         self.path = info.path
         self.name = info.name
         self.threshold = trigger_threshold
+        self.keymap = info.keymap
         self.fd = linux.open_node(info.path)
         self.grabbed = linux.grab(self.fd, True) if grab else False
         self.sticks = {"LS": [0.0, 0.0], "RS": [0.0, 0.0]}
@@ -225,9 +274,9 @@ class Pad:
             if not data:
                 raise Gone(self.path)
             for ev_type, ev_code, value in linux.unpack_events(data):
-                if ev_type == linux.EV_KEY and ev_code in KEY_BUTTONS:
+                if ev_type == linux.EV_KEY and ev_code in self.keymap:
                     if value != 2:  # 2 is the kernel's autorepeat
-                        self._set(KEY_BUTTONS[ev_code], value == 1, out)
+                        self._set(self.keymap[ev_code], value == 1, out)
                 elif ev_type == linux.EV_ABS:
                     if ev_code in HAT:
                         negative, positive = HAT[ev_code]

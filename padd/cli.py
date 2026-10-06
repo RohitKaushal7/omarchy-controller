@@ -55,7 +55,8 @@ def cmd_devices(args) -> int:
         print("no controller found")
         return 1
     for info in pads:
-        print(f"{info.name}  {info.path}  {info.vendor:04x}:{info.product:04x}")
+        fix = "  (Bluetooth layout fix)" if info.describe()["layoutFix"] else ""
+        print(f"{info.name}  {info.path}  {info.vendor:04x}:{info.product:04x}{fix}")
         print(f"    {' '.join(info.buttons)}")
     return 0
 
