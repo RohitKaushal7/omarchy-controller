@@ -59,6 +59,12 @@ def _k(keys, label, repeat=False):
     return action
 
 
+def _move(workspace, label):
+    """Move the focused window to a workspace and follow it there."""
+    lua = f'hl.dsp.window.move({{ workspace = "{workspace}" }})'
+    return {"exec": f"hyprctl dispatch '{lua}'", "label": label}
+
+
 # Browse with the sticks and face buttons, hold LT for text editing, hold
 # RT for the system. A button keeps a related job in every layer: B goes
 # back, deletes, and closes; the d-pad moves, jumps words, and moves focus.
@@ -75,8 +81,16 @@ DEFAULT_LAYERS = [
             "DOWN": _k("DOWN", "Down", True),
             "LEFT": _k("LEFT", "Left / seek back", True),
             "RIGHT": _k("RIGHT", "Right / seek forward", True),
-            "LB": _k("SUPER+SHIFT+TAB", "Previous workspace"),
-            "RB": _k("SUPER+TAB", "Next workspace"),
+            # Hold a bumper to take the focused window along: RB gives it a
+            # workspace of its own, LB carries it back.
+            "LB": {
+                "tap": _k("SUPER+SHIFT+TAB", "Previous workspace"),
+                "hold": _move("e-1", "Window to previous workspace"),
+            },
+            "RB": {
+                "tap": _k("SUPER+TAB", "Next workspace"),
+                "hold": _move("empty", "Window to a new workspace"),
+            },
             "START": _k("SUPER+SPACE", "Omarchy menu"),
             "BACK": _k("ESC", "Escape"),
             "L3": {"mouse": "precision", "label": "Precision"},

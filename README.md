@@ -47,7 +47,7 @@ Then three things make it easy to learn:
 | **Y** | Dictation ([voxtype](https://voxtype.io)) | Undo | Screenshot |
 | **D-pad ↑ ↓** | Arrows, repeat | Start / end of line | Volume, repeats |
 | **D-pad ← →** | Arrows, repeat (seek a video) | Word left / right | Focus window left / right |
-| **LB / RB** | Previous / next workspace | Copy / paste | Previous / next tab |
+| **LB / RB** | Previous / next workspace; hold to take the window along | Copy / paste | Previous / next tab |
 | **Start** | Omarchy menu | Select all | Window fullscreen |
 | **Back** | Escape | Tab | Former workspace; hold to lock |
 
@@ -58,6 +58,12 @@ Then three things make it easy to learn:
 | **L3 / R3** | Precision mode (slower pointer) / right click |
 | **Guide** | Tap: show the current layer's card. Hold: mouse off and on, for games |
 | **Guide + Back** | Switch the whole controller off and on, even while it is off |
+
+Holding **RB** moves the focused window to a new, empty workspace and takes
+you there; holding **LB** carries it back to the previous one. To open
+something on a workspace of its own, open it as usual and hold RB. One app
+per workspace, made fullscreen with RT + Start, reads well from across the
+room, and LB / RB flip between them like channels.
 
 Everything here can be changed in the panel or the config.
 

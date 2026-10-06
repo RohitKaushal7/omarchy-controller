@@ -131,6 +131,14 @@ class TestDaemon(unittest.TestCase):
         self.pad.set("RT", False)
         self.assertEqual(self.daemon.fired(), ["system:Former workspace", "system:Lock"])
 
+    def test_bumper_tap_switches_and_hold_takes_the_window(self):
+        self.pad.tap("RB", hold=0.05)
+        self.pad.tap("RB", hold=0.45)
+        self.pad.tap("LB", hold=0.45)
+        self.assertEqual(self.daemon.fired(), [
+            "base:Next workspace", "base:Window to a new workspace", "base:Window to previous workspace",
+        ])
+
     def test_pause_reports_buttons_but_runs_nothing(self):
         self.daemon.send(cmd="pause")
         self.daemon.wait("state", paused=True)

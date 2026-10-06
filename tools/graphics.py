@@ -192,15 +192,18 @@ def preview(config: Config) -> str:
 
 
 def cheatsheet(config: Config) -> str:
-    w, h = 1600, 1180
+    w, h = 1600, 1260
     columns = []
     for layer in config.layers:
-        rows = "".join(
-            f'<div class="r">{cap(b)}<div class="l">{html.escape(l)}</div>'
-            + (f'<div class="how">{html.escape(how)}</div>' if how else "")
-            + "</div>"
-            for b, l, how in entries(layer)
-        )
+        def row(b, l, how):
+            # A second action on a hold gets its own line; a plain tag stays right.
+            if how.startswith("hold: "):
+                return (f'<div class="r">{cap(b)}<div class="l">{html.escape(l)}'
+                        f'<div class="sub">hold: {html.escape(how[6:])}</div></div></div>')
+            tag = f'<div class="how">{html.escape(how)}</div>' if how else ""
+            return f'<div class="r">{cap(b)}<div class="l">{html.escape(l)}</div>{tag}</div>'
+
+        rows = "".join(row(*entry) for entry in entries(layer))
         head = (f'{cap(layer.key, lit=True)}<div><div class="ln">{html.escape(layer.name)}</div>'
                 f'<div class="dim small">hold {layer.key}</div></div>') if layer.key else (
                 f'<div class="cap" style="font-size:20px">\U000F05BA</div><div><div class="ln">{html.escape(layer.name)}</div>'
@@ -217,6 +220,7 @@ def cheatsheet(config: Config) -> str:
       .ln { font-size:24px; font-weight:700; } .small { font-size:14px; margin-top:2px; }
       .r { display:flex; align-items:center; gap:14px; font-size:18px; }
       .l { flex:1; } .how { font-size:13px; color:var(--accent); opacity:.85; }
+      .sub { font-size:13px; color:var(--accent); opacity:.85; margin-top:2px; }
       .foot { display:grid; grid-template-columns:repeat(4, 1fr); gap:24px; margin-top:24px; }
       .f { padding:20px 22px; font-size:16px; line-height:1.45; }
       .f b { display:flex; align-items:center; gap:10px; font-size:17px; margin-bottom:8px; }

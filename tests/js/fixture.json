@@ -1,6 +1,10 @@
 {
   "version": 1,
   "enabled": true,
+  "toggleCombo": [
+    "GUIDE",
+    "BACK"
+  ],
   "device": {
     "match": [],
     "grab": false
@@ -47,12 +51,24 @@
           "label": "Dictation"
         },
         "LB": {
-          "keys": "SUPER+SHIFT+TAB",
-          "label": "Previous workspace"
+          "tap": {
+            "keys": "SUPER+SHIFT+TAB",
+            "label": "Previous workspace"
+          },
+          "hold": {
+            "exec": "hyprctl dispatch 'hl.dsp.window.move({ workspace = \"e-1\" })'",
+            "label": "Window to previous workspace"
+          }
         },
         "RB": {
-          "keys": "SUPER+TAB",
-          "label": "Next workspace"
+          "tap": {
+            "keys": "SUPER+TAB",
+            "label": "Next workspace"
+          },
+          "hold": {
+            "exec": "hyprctl dispatch 'hl.dsp.window.move({ workspace = \"empty\" })'",
+            "label": "Window to a new workspace"
+          }
         },
         "BACK": {
           "keys": "ESC",
