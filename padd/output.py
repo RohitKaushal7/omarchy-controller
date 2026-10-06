@@ -24,23 +24,51 @@ REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES = code("REL_WHEEL_HI_RES"), code("REL_HWHEEL
 NOTCH = 120  # REL_WHEEL_HI_RES units in one wheel notch
 
 
+MODIFIERS = {code(f"KEY_{name}") for name in (
+    "LEFTMETA", "RIGHTMETA", "LEFTCTRL", "RIGHTCTRL", "LEFTALT", "RIGHTALT", "LEFTSHIFT", "RIGHTSHIFT",
+)}
+
+
 class Keyboard:
-    def __init__(self, dry_run: bool = False):
+    def __init__(self, dry_run: bool = False, record: bool = False):
         self.dry_run = dry_run
+        # Every report that would have been sent, for the tests.
+        self.sent: list[list[tuple[int, int, int]]] | None = [] if record else None
         # Keys only: a keyboard that also claims mouse or pad buttons confuses
         # libinput's device classification.
         buttons = set(with_prefix("BTN_").values())
         keys = [c for c in key_codes().values() if c > 0 and c not in buttons]
         self.device = linux.UInput("padd virtual keyboard", product=0xCD01, keys=keys)
 
+    def _send(self, events) -> None:
+        if self.sent is not None:
+            self.sent.append(list(events))
+        if not self.dry_run:
+            self.device.open()
+            self.device.send(events)
+
     def tap(self, spec: str) -> None:
+        """Press a combo the way fingers do: modifiers first, then the key.
+
+        In one report, Hyprland can take the key before the modifier and
+        let it through as typing (SUPER+SPACE arriving as a space). So the
+        modifiers go down in a report of their own, and come up last.
+        """
         codes = combo(spec)
-        if self.dry_run:
-            return
-        self.device.open()
-        self.device.send([(linux.EV_KEY, c, 1) for c in codes])
-        time.sleep(0.01)
-        self.device.send([(linux.EV_KEY, c, 0) for c in reversed(codes)])
+        mods = [c for c in codes if c in MODIFIERS]
+        keys = [c for c in codes if c not in MODIFIERS] or mods
+        if keys is mods:
+            mods = []
+        pause = 0 if self.dry_run else 0.012
+        if mods:
+            self._send([(linux.EV_KEY, c, 1) for c in mods])
+            time.sleep(pause)
+        self._send([(linux.EV_KEY, c, 1) for c in keys])
+        time.sleep(pause)
+        self._send([(linux.EV_KEY, c, 0) for c in reversed(keys)])
+        if mods:
+            time.sleep(pause)
+            self._send([(linux.EV_KEY, c, 0) for c in reversed(mods)])
 
     def close(self) -> None:
         self.device.close()

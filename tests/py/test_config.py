@@ -128,6 +128,31 @@ class TestQuirks(unittest.TestCase):
         self.assertIs(keymap_for(BUS_BLUETOOTH, 0x2DC8, ordered), KEY_BUTTONS)
 
 
+class TestKeyboard(unittest.TestCase):
+    def test_modifiers_go_down_first_and_come_up_last(self):
+        from padd.codes import code
+        from padd.output import Keyboard
+
+        kb = Keyboard(dry_run=True, record=True)
+        kb.tap("SUPER+SPACE")
+        meta, space = code("KEY_LEFTMETA"), code("KEY_SPACE")
+        self.assertEqual(kb.sent, [
+            [(linux.EV_KEY, meta, 1)], [(linux.EV_KEY, space, 1)],
+            [(linux.EV_KEY, space, 0)], [(linux.EV_KEY, meta, 0)],
+        ])
+
+    def test_plain_keys_and_bare_modifiers(self):
+        from padd.codes import code
+        from padd.output import Keyboard
+
+        kb = Keyboard(dry_run=True, record=True)
+        kb.tap("F")
+        kb.tap("SHIFT")
+        f, shift = code("KEY_F"), code("KEY_LEFTSHIFT")
+        self.assertEqual(kb.sent, [[(linux.EV_KEY, f, 1)], [(linux.EV_KEY, f, 0)],
+                                   [(linux.EV_KEY, shift, 1)], [(linux.EV_KEY, shift, 0)]])
+
+
 class Stick:
     def __init__(self, **sticks):
         self.sticks = sticks

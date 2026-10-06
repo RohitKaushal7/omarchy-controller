@@ -91,7 +91,9 @@ DEFAULT_LAYERS = [
                 "tap": _k("SUPER+TAB", "Next workspace"),
                 "hold": _move("empty", "Window to a new workspace"),
             },
-            "START": _k("SUPER+SPACE", "Omarchy menu"),
+            # The command Omarchy's own SUPER + SPACE runs: typed, the shortcut
+            # can reach a text box as a bare space before the menu opens.
+            "START": {"exec": "omarchy-menu toggle", "label": "Omarchy menu"},
             "BACK": _k("ESC", "Escape"),
             "L3": {"mouse": "precision", "label": "Precision"},
             "R3": {"click": "right", "label": "Right click"},
