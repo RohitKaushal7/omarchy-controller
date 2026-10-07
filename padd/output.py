@@ -7,7 +7,7 @@ import os
 import subprocess
 import time
 
-from . import linux
+from . import linux, wayland
 from .codes import code, with_prefix
 from .keymap import combo, key_codes
 
@@ -29,8 +29,28 @@ MODIFIERS = {code(f"KEY_{name}") for name in (
 )}
 
 
+def backend() -> str:
+    """Where virtual input goes: "wayland", "uinput", or "" for nowhere.
+
+    The compositor's virtual keyboard and pointer need no permissions, so
+    they come first; /dev/uinput, which a stock install does not let users
+    write, is the fallback (a TTY, or a compositor without the protocols).
+    PADD_OUTPUT=wayland|uinput forces one, for testing.
+    """
+    forced = os.environ.get("PADD_OUTPUT", "")
+    if forced in ("wayland", "uinput"):
+        return forced
+    if os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            if len(wayland.available()) == 2:
+                return "wayland"
+        except OSError:
+            pass
+    return "uinput" if can_write_uinput() else ""
+
+
 class Keyboard:
-    def __init__(self, dry_run: bool = False, record: bool = False):
+    def __init__(self, dry_run: bool = False, record: bool = False, output: str = "uinput"):
         self.dry_run = dry_run
         # Every report that would have been sent, for the tests.
         self.sent: list[list[tuple[int, int, int]]] | None = [] if record else None
@@ -38,7 +58,8 @@ class Keyboard:
         # libinput's device classification.
         buttons = set(with_prefix("BTN_").values())
         keys = [c for c in key_codes().values() if c > 0 and c not in buttons]
-        self.device = linux.UInput("padd virtual keyboard", product=0xCD01, keys=keys)
+        self.device = (wayland.VirtualKeyboard() if output == "wayland"
+                       else linux.UInput("padd virtual keyboard", product=0xCD01, keys=keys))
 
     def _send(self, events) -> None:
         if self.sent is not None:
@@ -103,11 +124,12 @@ def shape(x: float, y: float, rate: float, deadzone: float, curve: float) -> tup
 class Mouse:
     """Stick motion and clicks on a virtual mouse."""
 
-    def __init__(self, settings: dict, dry_run: bool = False, record: bool = False):
+    def __init__(self, settings: dict, dry_run: bool = False, record: bool = False,
+                 output: str = "uinput"):
         self.dry_run = dry_run
         # Every report that would have been sent, for the tests.
         self.sent: list[list[tuple[int, int, int]]] | None = [] if record else None
-        self.device = linux.UInput(
+        self.device = wayland.VirtualPointer() if output == "wayland" else linux.UInput(
             "padd virtual mouse",
             product=0xCD02,
             keys=BUTTON_CODES.values(),

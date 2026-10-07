@@ -13,7 +13,7 @@ import sys
 import time
 
 from .config import Config, ConfigError, load
-from .output import Keyboard, Mouse, run
+from .output import Keyboard, Mouse, backend, run
 from .pad import Gone, Pad, Scanner
 from .resolver import Effect, Resolver
 
@@ -28,8 +28,9 @@ class Daemon:
         self.scanner = Scanner()
         self.pads: dict[str, Pad] = {}
         self.resolver = Resolver(config)
-        self.keyboard = Keyboard(dry_run)
-        self.mouse = Mouse(config.mouse, dry_run)
+        self.output = "" if dry_run else backend()
+        self.keyboard = Keyboard(dry_run, output=self.output or "uinput")
+        self.mouse = Mouse(config.mouse, dry_run, output=self.output or "uinput")
         self.paused = False
         self.running = False
         self._layer = self.resolver.layer
@@ -64,6 +65,7 @@ class Daemon:
             precise=self.mouse.precise,
             layer=self.resolver.layer,
             config=str(self.config.path),
+            output=self.output,
         )
 
     @property
@@ -309,7 +311,10 @@ class Daemon:
             os.set_blocking(sys.stdin.fileno(), False)
         except (OSError, ValueError):
             self._stdin_open = False
-        self.emit("started", pid=os.getpid(), dryRun=self.dry_run)
+        self.emit("started", pid=os.getpid(), dryRun=self.dry_run, output=self.output)
+        if not self.dry_run and not self.output:
+            self.emit("error", message="nothing can receive keys or pointer motion: no Wayland "
+                      "compositor with virtual keyboard and pointer support, and /dev/uinput is not writable")
         if not self.dry_run and self.mouse.on:
             try:
                 self.mouse.device.open()

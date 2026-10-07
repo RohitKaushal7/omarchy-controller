@@ -25,7 +25,7 @@ Service.qml        one per shell: runs the daemon, parses its events, IPC,
 ui/                popup body, rows, editor, hint overlay
 lib/*.js           pure logic for the QML side, tested with node
 bin/padctl         CLI: the daemon, listing, binding, diagnostics
-padd/              the daemon: evdev in, uinput keyboard + mouse out
+padd/              the daemon: evdev in, virtual keyboard + pointer out
 tests/             python unittest, node --test, qmllint
 ```
 
@@ -107,9 +107,15 @@ copied into the source.
 One stick moves, the other scrolls (hi-res wheel). Speed is
 `speed * t^curve`, with `t` the travel past a radial deadzone, so a light
 tilt moves a pixel at a time and full tilt crosses the screen. `precision`
-scales both while precision is on. Output goes to its own uinput mouse,
-`padd virtual mouse`; README tells Hyprland users to give it a flat
-acceleration profile. `mouse: toggle` switches the mouse off and on at run
+scales both while precision is on.
+
+Keys and pointer events go to the compositor through
+`zwp_virtual_keyboard_manager_v1` and `zwlr_virtual_pointer_manager_v1`
+(`padd/wayland.py`, the wire protocol in the standard library). They need no
+device permission, so a stock install works. The virtual keyboard carries an
+ordinary US keymap by name (`pc+us+inet(evdev)`), so evdev key codes go out
+unchanged and media keys work. Without those protocols the daemon falls back
+to `/dev/uinput` devices, where that is writable. `mouse: toggle` switches the mouse off and on at run
 time (for games); `mouse.enabled` is the persisted default.
 
 ## 7. Daemon protocol

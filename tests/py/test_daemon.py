@@ -83,6 +83,11 @@ class Daemon:
         self.dir.cleanup()
 
 
+# The synthetic pad is a uinput device; without write access there is no pad.
+needs_uinput = unittest.skipUnless(os.access("/dev/uinput", os.W_OK), "/dev/uinput is not writable")
+
+
+@needs_uinput
 class TestDaemon(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -200,6 +205,7 @@ class TestDaemon(unittest.TestCase):
             self.daemon.wait("reloaded")
 
 
+@needs_uinput
 class TestIsolation(unittest.TestCase):
     def test_default_match_ignores_synthetic_pads(self):
         daemon = Daemon({"timing": TIMING})

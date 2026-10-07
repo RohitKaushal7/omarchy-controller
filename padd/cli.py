@@ -14,7 +14,7 @@ from . import linux
 from . import pad as padmod
 from .codes import HEADER, CodesUnavailable, table
 from .config import CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, load
-from .output import can_write_uinput
+from .output import backend
 
 
 def _config(args) -> Config:
@@ -201,7 +201,14 @@ def cmd_doctor(args) -> int:
     readable = [n for n in nodes if os.access(n, os.R_OK)]
     report(bool(readable), f"/dev/input is readable ({len(readable)} of {len(nodes)} nodes)",
            "add your user to the input group, then log in again")
-    report(can_write_uinput(), "/dev/uinput is writable (virtual keyboard and mouse)")
+    out = backend()
+    if out == "wayland":
+        report(True, "virtual keyboard and mouse through the compositor (no permissions needed)")
+    elif out == "uinput":
+        report(True, "virtual keyboard and mouse through /dev/uinput")
+    else:
+        report(False, "nothing can receive keys or pointer motion",
+               "run inside a Wayland session with virtual keyboard and pointer support")
     try:
         config = _config(args)
         report(True, f"config {config.path}")

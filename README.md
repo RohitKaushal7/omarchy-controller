@@ -73,26 +73,20 @@ Everything here can be changed in the panel or the config.
 omarchy plugin add https://github.com/RohitKaushal7/omarchy-controller.git --enable
 ```
 
-A controller icon appears in the bar. Then give the virtual mouse a flat
-acceleration profile, since the plugin applies its own speed curve, by adding
-this to `~/.config/hypr/input.lua`:
+A controller icon appears in the bar, and the pad works. There is no setup
+step and nothing needs root:
 
-```lua
-hl.device({
-  name = "padd-virtual-mouse",
-  accel_profile = "flat",
-  sensitivity = 0,
-})
-```
+- **Reading the pad**: the seat gives the logged-in user access to game
+  controllers.
+- **Keys and the pointer** go to Hyprland through its virtual keyboard and
+  virtual pointer protocols, the ones `wtype` and `wlrctl` use, so no device
+  permission is involved.
+- Python 3 and `linux-api-headers` (key codes are read from
+  `/usr/include/linux/input-event-codes.h`) ship with Omarchy.
 
-Requirements, all present on a stock Omarchy install:
-
-- Python 3 and the kernel headers package `linux-api-headers` (key codes are
-  read from `/usr/include/linux/input-event-codes.h`).
-- Read access to `/dev/input` for the pad, and write access to `/dev/uinput`
-  for the virtual keyboard and mouse.
-
-`padctl doctor` checks all of it. `padctl` is `bin/padctl` in the plugin
+Outside a Wayland session the plugin falls back to `/dev/uinput`, if your
+user can write to it. `padctl doctor` checks all of it and says which route
+is in use. `padctl` is `bin/padctl` in the plugin
 folder.
 
 Wired, Bluetooth and the Xbox wireless adapter all work:
@@ -177,8 +171,8 @@ omarchy-shell dev.reuk.controller reload
 
 ## What it touches
 
-It reads the controller's `/dev/input` node and creates two virtual devices,
-`padd virtual keyboard` and `padd virtual mouse`, which go away when the shell
+It reads the controller's `/dev/input` node, and creates a virtual keyboard
+and a virtual pointer through the compositor, which go away when the shell
 stops. It writes only its own config file, and changes no Hyprland or Omarchy
 setting. Games still see the controller unless `device.grab` is on; switch
 the plugin off with Guide + Back while you play.
@@ -190,9 +184,10 @@ tests/run.sh          # daemon, panel logic, qmllint
 tools/graphics.py     # rebuild preview.png and docs/cheatsheet.png
 ```
 
-One test drives the real daemon with a synthetic uinput pad. Its name carries
-a marker that a running daemon ignores, so the suite can never type into your
-desktop.
+One test drives the real daemon with a synthetic uinput pad, and is skipped
+where `/dev/uinput` is not writable. The pad's name carries a marker that a
+running daemon ignores, so the suite can never type into your desktop. The
+Wayland output is tested against a fake compositor on a private socket.
 
 ## Remove
 
@@ -201,9 +196,6 @@ omarchy plugin disable dev.reuk.controller
 omarchy plugin remove dev.reuk.controller
 rm -rf ~/.config/dev.reuk.controller
 ```
-
-Then delete the `padd-virtual-mouse` block from `~/.config/hypr/input.lua`
-if you added it.
 
 ## License
 
