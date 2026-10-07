@@ -95,6 +95,16 @@ Requirements, all present on a stock Omarchy install:
 `padctl doctor` checks all of it. `padctl` is `bin/padctl` in the plugin
 folder.
 
+Wired, Bluetooth and the Xbox wireless adapter all work:
+
+- **USB**: the kernel's `xpad` driver, nothing to set up.
+- **Bluetooth**: Xbox pads on their original firmware number their buttons
+  in a row, so Back and Start would read as the bumpers. The plugin spots
+  that layout and maps it back; `padctl devices` says "Bluetooth layout fix".
+- **Wireless adapter (dongle)**: needs the out-of-tree
+  [`xone`](https://github.com/dlundqvist/xone) driver; without it the pad
+  does not appear at all.
+
 Optional: Y in Browse runs `voxtype record toggle` for dictation. Without
 [voxtype](https://voxtype.io) installed it does nothing;
 rebind it in the panel.

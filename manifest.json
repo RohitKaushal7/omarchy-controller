@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "dev.reuk.controller",
   "name": "Controller",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Rohit Kaushal",
   "license": "MIT",
   "description": "Drive the desktop from a game controller: the sticks are a mouse, the triggers hold layers of shortcuts, and an on-screen hint shows what each button does.",
