@@ -157,15 +157,26 @@ time (for games); `mouse.enabled` is the persisted default.
 ## 7. Daemon protocol
 
 Out (one JSON object per line, all with `"event"`): `started`, `state`
-(connected, device, enabled, paused, mouse, precise, layer, configError), `pad` (a
+(connected, device, enabled, paused, mouse, precise, layer, configError,
+battery, batteryStatus), `pad` (a
 button went down or up, with the resolved layer), `layer` (active layer
 changed), `fire` (an action ran: button, layer, slot, label, ok),
-`connected` (a pad was opened: name, path, and `new`, false for one found
+`batteryLow` (name, level: once per discharge), `connected` (a pad was
+opened: name, path, and `new`, false for one found
 at start-up or found again after a reload let go of it), `disconnected`,
 `reloaded`, `error`, `stopped`.
 
 In (one JSON object per line, `"cmd"`): `reload`, `pause`, `resume`,
 `mouse` (`on`, `off`, `toggle`), `state`, `quit`.
+
+The battery is the pad's `power_supply` in sysfs: the one whose device
+the pad's input device sits under, as xpadneo, hid-playstation,
+hid-nintendo, xpad and hid-input arrange it. It is read when the pad
+connects and once a minute after, and `battery` is the percentage, or
+null when the driver reports none (hid-input reads 0 and Unknown until
+the pad's first report, which counts as none). `batteryLow` fires when it
+reads 15% or less, once, and again only after it charges or reads 20% or
+more.
 
 A config file that will not load never stops the pad. At start-up the
 daemon runs on the defaults (keeping the file's `enabled` if it can be
@@ -177,7 +188,8 @@ so a fix applies on save. The panel shows `configError` until then.
 ## 8. Shell side
 
 - **Bar icon**: controller glyph, dim without a pad, accent while the
-  mouse is on, a pulse when an action fires.
+  mouse is on, a pulse when an action fires. Its tooltip names the pad,
+  with its battery when one is reported; a notice says when it runs low.
 - **Popup**: a hero (pad glyph, name, status line in caps, the buttons held
   right now); the master switch, labelled with the toggle combo; the mouse
   switch; a search box focused on open that matches button

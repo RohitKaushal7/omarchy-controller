@@ -105,7 +105,9 @@ rebind it in the panel.
 
 ## The panel
 
-Click the bar icon.
+The bar icon's tooltip names the pad and, when its driver reports one, its
+battery. A notice on screen says when a pad connects, and when its battery
+runs low. Click the icon for the panel.
 
 - **Controller**: the master switch, with the pad shortcut that does the same
   (Guide + Back). Middle-click the bar icon for the same thing.

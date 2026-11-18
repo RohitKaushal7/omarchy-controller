@@ -39,6 +39,9 @@ Panel {
 
   readonly property bool connected: service ? service.connected === true : false
   readonly property bool live: connected && service.switchedOn === true
+  // Only when the pad's driver reports a battery.
+  readonly property string batteryText: connected && service.battery >= 0
+    ? " · " + service.battery + "%" + (service.batteryStatus === "Charging" ? " charging" : "") : ""
   property bool pulsing: false
 
   implicitWidth: button.implicitWidth
@@ -68,7 +71,7 @@ Panel {
     activeColor: root.pulsing ? Color.foreground : Color.accent
     tooltipText: !root.service ? "Controller: starting"
       : !root.connected ? "Controller: no pad connected"
-      : root.service.device + (root.service.switchedOn ? "" : " (off)") + (root.service.mouseOn ? " · mouse on" : "")
+      : root.service.device + root.batteryText + (root.service.switchedOn ? "" : " (off)") + (root.service.mouseOn ? " · mouse on" : "")
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.MiddleButton) {
         if (root.service) root.service.setEnabled(!root.service.switchedOn)

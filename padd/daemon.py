@@ -18,6 +18,7 @@ from .pad import Gone, Pad, Scanner
 from .resolver import Effect, Resolver
 
 RESCAN_S = 2.0
+BATTERY_S = 60.0  # a pad's battery changes slowly; sysfs is read this often
 
 
 class Daemon:
@@ -43,6 +44,7 @@ class Daemon:
         self._stdin = b""
         self._stdin_open = True
         self._last_scan = 0.0
+        self._last_battery = 0.0
         # Pads found by the first scan, or found again after a reload let go
         # of them, were already there: their "connected" is not news.
         self._scanned = False
@@ -69,6 +71,8 @@ class Daemon:
             connected=pad is not None,
             device=pad.name if pad else "",
             grabbed=bool(pad and pad.grabbed),
+            battery=pad.battery.level if pad else None,
+            batteryStatus=pad.battery.status if pad else "",
             enabled=self.config.enabled,
             paused=self.paused,
             mouse=self.mouse.on,
@@ -108,9 +112,26 @@ class Daemon:
                 continue
             self.pads[path] = pad
             changed = True
+            low = pad.battery.poll()
             self.emit("connected", **info.describe(), grabbed=pad.grabbed, new=new)
+            if low:
+                self._battery_low(pad)
         if changed:
             self.state()
+
+    def poll_battery(self) -> None:
+        self._last_battery = time.monotonic()
+        changed = False
+        for pad in list(self.pads.values()):
+            before = (pad.battery.level, pad.battery.status)
+            if pad.battery.poll():
+                self._battery_low(pad)
+            changed = changed or (pad.battery.level, pad.battery.status) != before
+        if changed:
+            self.state()
+
+    def _battery_low(self, pad: Pad) -> None:
+        self.emit("batteryLow", name=pad.name, level=pad.battery.level)
 
     def _drop(self, path: str, reason: str) -> None:
         pad = self.pads.pop(path, None)
@@ -369,7 +390,8 @@ class Daemon:
             if self._reload:
                 self._reload_config()
             now = time.monotonic()
-            deadlines = [self._last_scan + RESCAN_S, self.resolver.next_deadline()]
+            deadlines = [self._last_scan + RESCAN_S, self.resolver.next_deadline(),
+                         self._last_battery + BATTERY_S]
             if self.live:
                 deadlines.append(self.mouse.next_deadline(now, list(self.pads.values())))
             timeout = max(0.0, min(d for d in deadlines if d is not None) - now)
@@ -407,6 +429,8 @@ class Daemon:
             if now - self._last_scan >= RESCAN_S:
                 self._recheck_config()
                 self.rescan()
+            if now - self._last_battery >= BATTERY_S:
+                self.poll_battery()
         self.shutdown()
         return 0
 

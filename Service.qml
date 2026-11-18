@@ -29,6 +29,9 @@ Item {
   property bool running: false
   property bool connected: false
   property string device: ""
+  // The pad's battery in percent, -1 when its driver reports none.
+  property int battery: -1
+  property string batteryStatus: ""
   property bool switchedOn: true
   property bool paused: false
   property bool mouseOn: true
@@ -88,6 +91,7 @@ Item {
       root.running = running
       if (!running) {
         root.connected = false
+        root.battery = -1
         root.held = []
         root.activeLayer = "base"
         restartTimer.restart()
@@ -109,6 +113,8 @@ Item {
     case "state":
       root.connected = e.connected === true
       root.device = String(e.device || "")
+      root.battery = typeof e.battery === "number" ? Math.round(e.battery) : -1
+      root.batteryStatus = String(e.batteryStatus || "")
       if (root.config && root.switchedOn !== (e.enabled !== false)) {
         const combo = root.config.toggleCombo || []
         hint.notice(e.enabled !== false ? "Controller on"
@@ -133,6 +139,10 @@ Item {
       break
     case "disconnected":
       root.held = []
+      break
+    case "batteryLow":
+      // Once per discharge; the daemon decides when.
+      hint.notice((String(e.name || "") || "Controller") + " battery low  ·  " + Math.round(Number(e.level) || 0) + "%")
       break
     case "pad":
       root.held = Array.isArray(e.held) ? e.held : []
@@ -263,6 +273,7 @@ Item {
 
     function status(): string {
       return JSON.stringify({ running: root.running, connected: root.connected, device: root.device,
+                              battery: root.battery >= 0 ? root.battery : null,
                               enabled: root.switchedOn, paused: root.paused, mouse: root.mouseOn,
                               precise: root.precise, layer: root.activeLayer, held: root.held,
                               config: root.configPath, configError: root.configError, error: root.lastError })

@@ -47,6 +47,7 @@ test("unbind removes just the slot", () => {
 test("protocol lines", () => {
   assert.strictEqual(P.command("mouse", { on: "toggle" }), '{"cmd":"mouse","on":"toggle"}\n')
   assert.strictEqual(P.parse('{"event":"layer","layer":"text"}').layer, "text")
+  assert.strictEqual(P.parse('{"event":"batteryLow","level":12}').level, 12)
   assert.strictEqual(P.parse('{"event":"bogus"}'), null)
   assert.strictEqual(P.parse("not json"), null)
   assert.strictEqual(P.parse("[1]"), null)

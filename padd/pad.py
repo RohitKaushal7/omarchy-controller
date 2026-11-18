@@ -103,6 +103,81 @@ STICK_AXES = {
 }
 
 
+# A pad's battery is "low" at or below LOW percent, said once per discharge:
+# again only after it charges, or reads REARM or more.
+LOW = 15
+REARM = 20
+
+
+def _read(directory: str, name: str) -> str:
+    try:
+        with open(os.path.join(directory, name)) as handle:
+            return handle.read().strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def find_battery(event_path: str, sysfs: str = "/sys") -> str:
+    """The power_supply directory of the pad behind an event node, or "".
+
+    xpadneo, hid-playstation, hid-nintendo, xpad and hid-input all hang
+    the pad's battery off the device the input device sits under, so the
+    supply whose device is an ancestor of this input device is the pad's.
+    """
+    node = os.path.basename(event_path)
+    device = os.path.realpath(os.path.join(sysfs, "class", "input", node, "device"))
+    if not os.path.isdir(device):
+        return ""
+    supplies = os.path.join(sysfs, "class", "power_supply")
+    try:
+        names = sorted(os.listdir(supplies))
+    except OSError:
+        return ""
+    for name in names:
+        supply = os.path.join(supplies, name)
+        if _read(supply, "type") != "Battery" or _read(supply, "scope") == "System":
+            continue
+        owner = os.path.realpath(os.path.join(supply, "device"))
+        if os.path.isdir(owner) and (device == owner or device.startswith(owner + os.sep)):
+            return supply
+    return ""
+
+
+class Battery:
+    """A pad's battery, read when asked (rarely: it changes slowly)."""
+
+    def __init__(self, event_path: str, sysfs: str = "/sys"):
+        self.event_path = event_path
+        self.sysfs = sysfs
+        self.supply = ""
+        self.level: int | None = None  # percent, None when none is reported
+        self.status = ""  # Charging, Discharging, Full, ...
+        self._warned = False
+
+    def poll(self) -> bool:
+        """Read it again. True when it has just become low, once per discharge."""
+        if not self.supply or not os.path.isdir(self.supply):
+            self.supply = find_battery(self.event_path, self.sysfs)
+        self.level, self.status = None, ""
+        if not self.supply:
+            return False
+        status = _read(self.supply, "status") or "Unknown"
+        try:
+            level = int(_read(self.supply, "capacity"))
+        except ValueError:
+            return False
+        # hid-input reads 0 and Unknown until the pad's first battery report.
+        if level <= 0 and status == "Unknown":
+            return False
+        self.level, self.status = max(0, min(100, level)), status
+        if status in ("Charging", "Full") or self.level >= REARM:
+            self._warned = False
+        elif self.level <= LOW and not self._warned:
+            self._warned = True
+            return True
+        return False
+
+
 class Gone(Exception):
     """The device went away (unplugged, out of range, powered off)."""
 
@@ -220,6 +295,7 @@ class Pad:
         self.keymap = info.keymap
         self.fd = linux.open_node(info.path)
         self.grabbed = linux.grab(self.fd, True) if grab else False
+        self.battery = Battery(info.path)
         self.sticks = {"LS": [0.0, 0.0], "RS": [0.0, 0.0]}
         self._down: set[str] = set()
         # What was held right after each press in the last read, since one

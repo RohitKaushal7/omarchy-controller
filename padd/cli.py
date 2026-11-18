@@ -56,7 +56,10 @@ def cmd_devices(args) -> int:
         return 1
     for info in pads:
         fix = "  (Bluetooth layout fix)" if info.describe()["layoutFix"] else ""
-        print(f"{info.name}  {info.path}  {info.vendor:04x}:{info.product:04x}{fix}")
+        battery = padmod.Battery(info.path)
+        battery.poll()
+        charge = f"  battery {battery.level}%" if battery.level is not None else ""
+        print(f"{info.name}  {info.path}  {info.vendor:04x}:{info.product:04x}{fix}{charge}")
         print(f"    {' '.join(info.buttons)}")
     return 0
 

@@ -110,6 +110,12 @@ class TestDaemon(unittest.TestCase):
     def test_a_pad_plugged_in_while_running_is_news(self):
         self.assertTrue(self.connected["new"])
 
+    def test_no_battery_reported_is_none(self):
+        self.daemon.send(cmd="state")
+        state = self.daemon.wait("state")
+        self.assertIsNone(state["battery"])  # uinput pads have no power supply
+        self.assertEqual(state["batteryStatus"], "")
+
     def test_tap(self):
         self.pad.tap("X")
         self.assertEqual(self.daemon.fired(), ["base:Play / pause"])
