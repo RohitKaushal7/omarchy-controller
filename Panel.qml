@@ -88,19 +88,19 @@ Panel {
     open: root.opened
     focusTarget: keys
     contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(820))
+    contentHeight: panel.fittedContentHeight(body.implicitHeight, Style.space(820))
 
     PanelKeyCatcher {
       id: keys
       anchors.fill: parent
       // Typing goes to the search box and the editor's fields.
-      blocked: content.typing
+      blocked: body.typing
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(text) { content.focusSearch(text) }
+      onTextKey: function(text) { body.focusSearch(text) }
 
       PopupBody {
-        id: content
+        id: body
         width: parent.width
         bar: root.bar
         service: root.service

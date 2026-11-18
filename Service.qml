@@ -107,7 +107,7 @@ Item {
       root.connected = e.connected === true
       root.device = String(e.device || "")
       if (root.config && root.switchedOn !== (e.enabled !== false)) {
-        var combo = root.config.toggleCombo || []
+        const combo = root.config.toggleCombo || []
         hint.notice(e.enabled !== false ? "Controller on"
           : "Controller off" + (combo.length ? "  ·  " + combo.map(root.buttonName).join(" + ") + " to turn on" : ""))
       }
@@ -131,8 +131,8 @@ Item {
       root.held = Array.isArray(e.held) ? e.held : []
       if (e.pressed === true) root.buttonDown(String(e.button))
       if (root.capturing && e.pressed === true && root.layerKeys.indexOf(e.button) < 0) {
-        var keys = root.held.filter(function(b) { return root.layerKeys.indexOf(b) >= 0 })
-        var got = Editor.captured(root.config, keys, String(e.button))
+        const keys = root.held.filter(function(b) { return root.layerKeys.indexOf(b) >= 0 })
+        const got = Editor.captured(root.config, keys, String(e.button))
         root.stopCapture()
         root.captured(got.layer, got.button)
       }
@@ -160,7 +160,7 @@ Item {
     stdout: StdioCollector {
       onStreamFinished: {
         try {
-          var parsed = JSON.parse(text)
+          const parsed = JSON.parse(text)
           root.configPath = String(parsed.path || "")
           root.config = parsed
         } catch (e) {}
@@ -243,10 +243,7 @@ Item {
 
   Loader {
     id: hintLoader
-    source: "ui/Hint.qml"
-    onLoaded: {
-      item.service = root
-    }
+    Component.onCompleted: setSource("ui/Hint.qml", { service: root })
   }
   readonly property var hint: hintLoader.item || ({ notice: function() {}, request: function() {} })
 
