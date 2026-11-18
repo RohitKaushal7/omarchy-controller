@@ -35,6 +35,7 @@ class _Press:
     binding: Binding
     hold_at: float | None = None
     repeat_at: float | None = None
+    tap_at: float | None = None  # a combo button's tap, held back
     clicking: bool = False
 
 
@@ -49,6 +50,8 @@ class Resolver:
         self.hold_time = config.timing["holdMs"] / 1000
         self.repeat_delay = config.timing["repeatDelayMs"] / 1000
         self.repeat_interval = config.timing["repeatMs"] / 1000
+        self.combo = set(config.toggle_combo)
+        self.combo_wait = config.timing["comboMs"] / 1000
         keys = config.layer_keys
         self._layer_stack = [k for k in self._layer_stack if k in keys]
 
@@ -67,7 +70,7 @@ class Resolver:
         times = [
             t
             for press in self._presses.values()
-            for t in (press.hold_at, press.repeat_at)
+            for t in (press.hold_at, press.repeat_at, press.tap_at)
             if t is not None
         ]
         return min(times) if times else None
@@ -106,6 +109,14 @@ class Resolver:
             # Wait: a release before hold_time is the tap, reaching it the hold.
             press.hold_at = now + self.hold_time
             return []
+        if button in self.combo and self.combo_wait > 0:
+            # The rest of the toggle combo may be on its way, and a combo
+            # runs none of its buttons' actions: fire on release, or once
+            # the window has passed with the button still down.
+            press.tap_at = now + self.combo_wait
+            if tap.repeat:
+                press.repeat_at = max(now + self.repeat_delay, press.tap_at)
+            return []
         if tap.repeat:
             press.repeat_at = now + self.repeat_delay
         return [Effect("fire", tap, button, layer, "tap", "press")]
@@ -121,13 +132,16 @@ class Resolver:
         tap = press.binding.tap
         if press.clicking:
             return [Effect("up", tap, button, press.layer, "tap", "release")]
-        if press.hold_at is not None and tap is not None:
+        if (press.hold_at is not None or press.tap_at is not None) and tap is not None:
             return [Effect("fire", tap, button, press.layer, "tap", "release")]
         return []
 
     def tick(self, now: float) -> list[Effect]:
         effects = []
         for press in list(self._presses.values()):
+            if press.tap_at is not None and now >= press.tap_at:
+                press.tap_at = None
+                effects.append(Effect("fire", press.binding.tap, press.button, press.layer, "tap", "press"))
             if press.hold_at is not None and now >= press.hold_at:
                 press.hold_at = None
                 hold = press.binding.hold

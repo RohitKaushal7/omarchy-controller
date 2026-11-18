@@ -120,6 +120,53 @@ class TestCancel(unittest.TestCase):
         self.assertEqual(seen(r.cancel("A")), [("up", "Click", "base", "release")])
 
 
+class TestComboWait(unittest.TestCase):
+    """A toggle combo button holds its tap back while the combo may follow."""
+
+    def r(self, **timing):
+        layers = [{"id": "base", "bindings": {
+            "BACK": {"keys": "ESC", "label": "Escape"},
+            "START": {"keys": "TAB", "repeat": True, "label": "Tab"},
+            "X": {"keys": "PLAYPAUSE", "label": "Play"},
+        }}]
+        return Resolver(Config({"layers": layers, "timing": {**TIMING, **timing},
+                                "toggleCombo": ["GUIDE", "BACK", "START"]}))
+
+    def test_a_quick_tap_fires_on_release(self):
+        r = self.r(comboMs=150)
+        self.assertEqual(r.press("BACK", 0.0), [])
+        self.assertEqual(r.next_deadline(), 0.15)
+        self.assertEqual(seen(r.release("BACK", 0.08)), [("fire", "Escape", "base", "release")])
+        self.assertEqual(r.tick(1.0), [])
+
+    def test_a_long_press_fires_once_the_window_passes(self):
+        r = self.r(comboMs=150)
+        r.press("BACK", 0.0)
+        self.assertEqual(r.tick(0.14), [])
+        self.assertEqual(seen(r.tick(0.15)), [("fire", "Escape", "base", "press")])
+        self.assertEqual(r.release("BACK", 0.5), [])
+
+    def test_the_combo_joining_cancels_the_tap(self):
+        r = self.r(comboMs=150)
+        r.press("BACK", 0.0)
+        r.cancel("BACK")  # what the daemon does when GUIDE completes the combo
+        self.assertEqual(r.tick(1.0), [])
+        self.assertEqual(r.release("BACK", 1.1), [])
+
+    def test_repeat_starts_after_the_held_back_tap(self):
+        r = self.r(comboMs=150, repeatDelayMs=100)
+        r.press("START", 0.0)
+        self.assertEqual(seen(r.tick(0.15)), [("fire", "Tab", "base", "press"),
+                                              ("fire", "Tab", "base", "repeat")])
+        self.assertEqual(len(r.tick(0.25)), 1)
+
+    def test_other_buttons_and_no_window(self):
+        r = self.r(comboMs=150)
+        self.assertEqual(seen(r.press("X", 0.0)), [("fire", "Play", "base", "press")])
+        r = self.r(comboMs=0)
+        self.assertEqual(seen(r.press("BACK", 0.0)), [("fire", "Escape", "base", "press")])
+
+
 class TestLayers(unittest.TestCase):
     def test_layer_key_switches_and_fires_nothing(self):
         r = resolver()

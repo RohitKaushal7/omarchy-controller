@@ -158,6 +158,7 @@ padctl monitor                    # print buttons as you press them
 | `timing.holdMs` | 450 | how long a hold takes |
 | `timing.hintDelayMs` | 350 | how long a trigger is held before its card shows |
 | `toggleCombo` | Guide + Back | the on / off combo; `[]` for none |
+| `timing.comboMs` | 150 | how long a combo button (Back) waits for the rest of the combo before its tap fires; it fires sooner if let go |
 | `device.match` | any pad | name substrings, to pick one pad of several |
 | `device.grab` | false | hide the pad from other apps while this runs |
 

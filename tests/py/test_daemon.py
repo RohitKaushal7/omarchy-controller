@@ -192,6 +192,24 @@ class TestDaemon(unittest.TestCase):
         self.pad.tap("X")
         self.assertEqual(self.daemon.fired(), ["base:Play / pause"])
 
+    def test_back_before_guide_sends_no_escape(self):
+        self.pad.set("BACK", True)
+        time.sleep(0.04)
+        self.pad.set("GUIDE", True)
+        self.daemon.wait("state", enabled=False)
+        self.pad.set("GUIDE", False)
+        self.pad.set("BACK", False)
+        try:
+            self.assertEqual(self.daemon.fired(), [], "Back ran its action as part of the combo")
+        finally:
+            self.combo()
+            self.daemon.wait("state", enabled=True)
+        # On its own, Back still sends Escape: on release, or held, soon after.
+        self.daemon.drain()
+        self.pad.tap("BACK", hold=0.05)
+        self.pad.tap("BACK", hold=0.3)
+        self.assertEqual(self.daemon.fired(), ["base:Escape", "base:Escape"])
+
     def combo(self):
         self.pad.set("GUIDE", True)
         time.sleep(0.05)

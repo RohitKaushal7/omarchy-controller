@@ -59,7 +59,7 @@ with every default (`padctl list --json` prints this):
   "toggleCombo": ["GUIDE", "BACK"],
   "device": { "match": [], "grab": false },
   "timing": { "holdMs": 450, "repeatDelayMs": 350, "repeatMs": 90,
-              "triggerThreshold": 0.3, "hintDelayMs": 350 },
+              "triggerThreshold": 0.3, "hintDelayMs": 350, "comboMs": 150 },
   "mouse": { "enabled": true, "move": "LS", "scroll": "RS",
              "speed": 1800, "curve": 2.2, "deadzone": 0.15,
              "scrollSpeed": 22, "scrollCurve": 2.0, "naturalScroll": false,
@@ -128,7 +128,12 @@ changed that button:
   then every `repeatMs`.
 - Hold only: fires once held `holdMs`; a shorter press does nothing.
 - Tap and hold: the tap fires on a release before `holdMs`, the hold at
-  `holdMs`. Only these buttons wait.
+  `holdMs`.
+- A `toggleCombo` button whose tap would fire on press waits instead, so
+  the rest of the combo can join without its action running: the tap fires
+  on release, or after `timing.comboMs` if the button is still down,
+  whichever comes first. Back pressed before Guide sends no Escape. Only
+  these buttons, and tap-and-hold ones, wait.
 - `click` actions press on press and release on release; they cannot have
   a hold or repeat.
 - Releasing a layer key ends the layer for later presses only.

@@ -39,6 +39,9 @@ DEFAULT_TIMING = {
     "repeatMs": 90,
     "triggerThreshold": 0.3,
     "hintDelayMs": 350,
+    # A toggle combo button waits this long, or until it is let go, before
+    # its tap fires: time for the rest of the combo to join.
+    "comboMs": 150,
 }
 
 DEFAULT_DEVICE = {"match": [], "grab": False}
@@ -375,6 +378,7 @@ class Config:
         for key in ("holdMs", "repeatDelayMs", "repeatMs", "hintDelayMs"):
             _number(self.timing, key, "timing", 10, 10000)
         _number(self.timing, "triggerThreshold", "timing", 0.05, 0.95)
+        _number(self.timing, "comboMs", "timing", 0, 1000)
 
         self.mouse = {**DEFAULT_MOUSE, **(raw.get("mouse") or {})}
         self.mouse["enabled"] = bool(self.mouse["enabled"])
