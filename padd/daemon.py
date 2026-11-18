@@ -12,7 +12,7 @@ import signal
 import sys
 import time
 
-from .config import Config, ConfigError, load
+from .config import Config, ConfigError, load, save_switch
 from .output import Keyboard, Mouse, backend, run
 from .pad import Gone, Pad, Scanner
 from .resolver import Effect, Resolver
@@ -162,8 +162,12 @@ class Daemon:
         """Switch everything, and keep it that way across restarts."""
         self._settle()
         self.config.enabled = on
+        # Only the switch is written, into the file as it is on disk: the
+        # config in memory may be older than a hand edit.
         try:
-            self.config.save()
+            save_switch(self.config.path, on)
+        except ConfigError as exc:
+            self.emit("error", message=f"switched {'on' if on else 'off'} until restart, not saved: {exc}")
         except OSError as exc:
             self.emit("error", message=f"could not save the switch: {exc}")
         self.state()

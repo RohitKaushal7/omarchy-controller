@@ -562,6 +562,27 @@ class Config:
         return write(self.path, data)
 
 
+def save_switch(path: Path | str, on: bool) -> Path:
+    """Set `enabled` in the file on disk, leaving the rest as it is there.
+
+    For the toggle combo, which flips the switch from the daemon: its copy
+    of the config can be older than the file (a hand edit not reloaded yet,
+    or one that failed to load), and saving that copy would undo the edit.
+    A file that is not JSON is left alone, and ConfigError says why.
+    """
+    path = Path(path)
+    if not path.exists():
+        return write(path, {"version": VERSION, "enabled": bool(on)})
+    try:
+        raw = json.loads(path.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"{path} is not valid JSON: {exc}") from None
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{path}: the top level must be an object")
+    raw["enabled"] = bool(on)
+    return write(path, raw)
+
+
 def write(path: Path, data: dict) -> Path:
     """Write the file atomically: a reader sees the old one or the new one."""
     path.parent.mkdir(parents=True, exist_ok=True)

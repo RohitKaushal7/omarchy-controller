@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import ROOT  # noqa: F401
-from padd.config import Action, Config, ConfigError, load
+from padd.config import Action, Config, ConfigError, load, save_switch
 from padd.keymap import BadKeys, combo
 from padd.output import NOTCH, REL_WHEEL, REL_WHEEL_HI_RES, REL_X, REL_Y, Mouse, shape
 from padd import linux
@@ -182,6 +182,34 @@ class TestSavedChanges(unittest.TestCase):
         # A version 2 change still has to make a valid config.
         with self.assertRaises(ConfigError):
             Config({"version": 2, "layers": [{"id": "base", "bindings": {"LT": {"keys": "A"}}}]})
+
+
+class TestSwitchSave(unittest.TestCase):
+    """The toggle combo writes only `enabled`, over the file as it is now."""
+
+    def test_keeps_an_edit_the_daemon_has_not_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            # Valid JSON, but not a valid config: the reload failed.
+            edit = {"version": 2, "enabled": True, "mouse": {"speed": "fast"}}
+            path.write_text(json.dumps(edit))
+            save_switch(path, False)
+            self.assertEqual(json.loads(path.read_text()), {**edit, "enabled": False})
+
+    def test_leaves_a_broken_file_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            path.write_text('{"enabled": true,, }')
+            with self.assertRaises(ConfigError):
+                save_switch(path, False)
+            self.assertEqual(path.read_text(), '{"enabled": true,, }')
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["c.json"], "temp file left")
+
+    def test_no_file_yet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sub" / "c.json"
+            save_switch(path, False)
+            self.assertFalse(load(path).enabled)
 
 
 class TestKeys(unittest.TestCase):

@@ -189,6 +189,38 @@ class TestDaemon(unittest.TestCase):
         self.pad.tap("X")
         self.assertEqual(self.daemon.fired(), ["base:Play / pause"])
 
+    def combo(self):
+        self.pad.set("GUIDE", True)
+        time.sleep(0.05)
+        self.pad.set("BACK", True)
+        time.sleep(0.05)
+        self.pad.set("BACK", False)
+        self.pad.set("GUIDE", False)
+
+    def test_combo_never_saves_over_a_broken_edit(self):
+        good = self.daemon.path.read_text()
+        broken = good.rstrip()[:-1] + ',, "typo"'  # a hand edit gone wrong
+        try:
+            self.daemon.path.write_text(broken)
+            self.daemon.send(cmd="reload")
+            self.daemon.wait("error")
+            self.combo()
+            error = self.daemon.wait("error")
+            self.assertIn("not saved", error["message"])
+            self.daemon.wait("state", enabled=False)
+            self.assertEqual(self.daemon.path.read_text(), broken, "the edit was overwritten")
+            # Fixed, but not reloaded yet: the switch lands in the new file.
+            edited = json.loads(good)
+            edited["timing"] = {**TIMING, "holdMs": 310}
+            self.daemon.write(edited)
+            self.combo()
+            self.daemon.wait("state", enabled=True)
+            self.assertEqual(json.loads(self.daemon.path.read_text()), {**edited, "enabled": True})
+        finally:
+            self.daemon.path.write_text(good)
+            self.daemon.send(cmd="reload")
+            self.daemon.wait("reloaded")
+
     def test_reload_picks_up_an_edit(self):
         config = json.loads(self.daemon.path.read_text())
         config["layers"] = [{"id": "base", "bindings": {"X": {"keys": "A", "label": "Edited"}}}]

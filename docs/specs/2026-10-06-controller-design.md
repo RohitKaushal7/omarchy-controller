@@ -109,7 +109,10 @@ changed that button:
 - `toggleCombo` (default `["GUIDE", "BACK"]`, `[]` for none): pressed
   together, switches `enabled` and saves it. It works while switched off,
   which is the point: out of the way for a game, back after it. The combo's
-  buttons do not run their own actions when it fires.
+  buttons do not run their own actions when it fires. The daemon saves the
+  switch by setting `enabled` in the file as it is on disk, never by
+  writing out its own copy, which may be older than a hand edit; a file
+  that is not JSON is left alone, and the switch lasts until a restart.
 - `device.match`: name substrings; empty means any gamepad. A device whose
   name contains `[padd-test]` is used only when `match` names it, so the
   test suite's synthetic pads can never drive a real desktop.
