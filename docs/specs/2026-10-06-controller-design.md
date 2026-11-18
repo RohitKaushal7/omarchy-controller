@@ -185,7 +185,9 @@ so a fix applies on save. The panel shows `configError` until then.
   highlighted live. Clicking a row edits it; a delete control shows on
   hover. An editor card adds or edits a binding: press **Record** and press
   the button on the pad (holding a layer key picks that layer), choose tap
-  or hold, the action kind and its value, a label, save.
+  or hold, the action kind and its value, a label, save. When the button
+  and slot already hold another action, a line under the button says what
+  saving replaces ("Replaces: Click"); there is no confirmation.
 - **Layer hint**: while a layer key is held past `hintDelayMs` with no
   other button pressed, a card at the bottom of the screen lists that
   layer's buttons. Pressing a button first means the layer is known, so the

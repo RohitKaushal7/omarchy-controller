@@ -51,3 +51,24 @@ test("protocol lines", () => {
   assert.strictEqual(P.parse("not json"), null)
   assert.strictEqual(P.parse("[1]"), null)
 })
+
+test("saving over another action says what it replaces", () => {
+  // +, record A, keys SPACE: A's click would go.
+  const fresh = Object.assign(E.blank("base"), { button: "A", value: "SPACE" })
+  assert.strictEqual(E.replaces(fresh, config), "Click")
+  // Editing a row in place replaces nothing but itself.
+  const back = E.fromRow(B.rows(config).find(r => r.id === "system:BACK:tap"))
+  assert.strictEqual(E.replaces(back, config), "")
+  // Switched from tap to hold, it would land on the hold.
+  assert.strictEqual(E.replaces(Object.assign({}, back, { slot: "hold" }), config), "Lock")
+  // Recorded again onto another bound button.
+  assert.strictEqual(E.replaces(Object.assign({}, back, { button: "A" }), config), "Video fullscreen")
+  // Free slots: a hold where only a tap is bound, a button with nothing.
+  assert.strictEqual(E.replaces(Object.assign({}, fresh, { slot: "hold" }), config), "")
+  assert.strictEqual(E.replaces(Object.assign(E.blank("system"), { button: "B" }), config), "")
+  assert.strictEqual(E.replaces(Object.assign(E.blank("system"), { button: "B", slot: "hold" }), config), "Close window")
+  assert.strictEqual(E.replaces(E.blank("base"), config), "")
+  // No label: what it sends.
+  const unlabelled = { layers: [{ id: "base", bindings: { X: { keys: "SUPER+Q" } } }] }
+  assert.strictEqual(E.replaces(Object.assign(E.blank("base"), { button: "X" }), unlabelled), "SUPER+Q")
+})

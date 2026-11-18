@@ -25,6 +25,8 @@ ColumnLayout {
   readonly property var effective: Object.assign({}, draft, {
     value: textual ? valueField.text : draft.value, label: labelField.text })
   readonly property string problem: Editor.problem(effective, config)
+  // Saving over another action replaces it; say which, before it is gone.
+  readonly property string replaced: capturing ? "" : Editor.replaces(draft, config)
   readonly property bool textFocused: valueField.activeFocus || labelField.activeFocus
   readonly property var draftLayer: config ? config.layers.filter(function(l) { return l.id === draft.layer })[0] || null : null
   readonly property color dim: Qt.darker(ink, 1.7)
@@ -155,6 +157,18 @@ ColumnLayout {
         onClicked: if (root.service) root.service.startCapture()
       }
     }
+  }
+
+  Text {
+    Layout.fillWidth: true
+    Layout.topMargin: -Style.space(6)
+    visible: root.replaced !== ""
+    textFormat: Text.PlainText
+    text: "Replaces: " + root.replaced
+    color: root.dim
+    elide: Text.ElideRight
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
   }
 
   // ---- when, and what ------------------------------------------------------
