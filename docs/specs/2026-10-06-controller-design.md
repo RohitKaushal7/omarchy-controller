@@ -49,7 +49,8 @@ copied into the source.
 
 ## 4. Config
 
-`$XDG_CONFIG_HOME/dev.reuk.controller/config.json`:
+`$XDG_CONFIG_HOME/dev.reuk.controller/config.json`, shown here in full
+with every default (`padctl list --json` prints this):
 
 ```json
 {
@@ -70,6 +71,33 @@ copied into the source.
 }
 ```
 
+The file holds only what differs from the defaults (`"version": 2`), so a
+default added or changed in an update reaches every user who has not
+changed that button:
+
+```json
+{
+  "version": 2,
+  "enabled": false,
+  "mouse": { "speed": 1400 },
+  "layers": [
+    { "id": "text", "bindings": { "Y": { "keys": "CTRL+SHIFT+Z", "label": "Redo" }, "X": null } },
+    { "id": "system", "removed": true },
+    { "id": "games", "name": "Games", "key": "L3", "bindings": { "A": { "keys": "SPACE" } } }
+  ]
+}
+```
+
+- `timing`, `mouse`, `device` and `toggleCombo` fill in from the defaults.
+- A `layers` entry whose `id` names a default layer changes it: its
+  `name`, its `key`, and each binding given; `null` removes that button's
+  default. `"removed": true` drops the layer. Any other id is a new layer,
+  given in full, after the defaults.
+- A file with `"version": 1`, or none, lists every layer and is taken as
+  it is (the format 0.1 wrote). The next save rewrites it as changes, which
+  mean the same: a button it leaves out is saved as `null`. A config that
+  changes cannot express, such as reordered layers, is still saved in
+  full. `padctl init` writes every default out, to edit by hand.
 - The first layer is the base and has no `key`. Every other layer has one.
 - A binding is either an action (meaning: on tap) or
   `{"tap": action, "hold": action}`.

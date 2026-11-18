@@ -167,7 +167,9 @@ def cmd_init(args) -> int:
     path = Path(args.config or DEFAULT_PATH)
     if path.exists() and not args.force:
         return _fail(f"{path} exists (--force to overwrite)")
-    Config({}, path).save()
+    # Every default written out, to edit by hand. The next save from the
+    # panel or padctl keeps only what was changed.
+    Config({}, path).save(full=True)
     print(f"wrote {path}")
     return 0
 

@@ -15,7 +15,11 @@ from pathlib import Path
 from .keymap import BadKeys, combo
 from .pad import BUTTONS, STICKS
 
-VERSION = 1
+# Version 1 lists every layer in full, and is taken as it is. Version 2,
+# which save() writes, holds only what differs from the defaults, so a
+# default added or changed in an update still reaches the user.
+VERSION = 2
+VERSIONS = (1, 2)
 
 CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 DEFAULT_PATH = CONFIG_HOME / "dev.reuk.controller" / "config.json"
@@ -36,6 +40,8 @@ DEFAULT_TIMING = {
     "triggerThreshold": 0.3,
     "hintDelayMs": 350,
 }
+
+DEFAULT_DEVICE = {"match": [], "grab": False}
 
 DEFAULT_MOUSE = {
     "enabled": True,
@@ -289,12 +295,63 @@ def _number(section: dict, key: str, where: str, low=None, high=None) -> float:
     return value
 
 
+def _merge_layers(changes) -> list:
+    """The default layers with a version 2 file's changes applied.
+
+    An entry whose id names a default layer changes it: its name, its key,
+    and each binding given (null removes that button's default). An entry
+    with `"removed": true` drops that default layer. Any other entry is a
+    new layer, given in full, after the defaults.
+    """
+    layers = copy.deepcopy(DEFAULT_LAYERS)
+    if changes is None:
+        return layers
+    if not isinstance(changes, list):
+        raise ConfigError("layers must be a list")
+    by_id = {layer["id"]: layer for layer in layers}
+    removed = set()
+    for index, item in enumerate(changes):
+        where = f"layers[{index}]"
+        if not isinstance(item, dict):
+            raise ConfigError(f"{where} must be an object")
+        layer_id = str(item.get("id") or "").strip()
+        if not layer_id:
+            raise ConfigError(f"{where} needs an id")
+        bindings = item.get("bindings") or {}
+        if not isinstance(bindings, dict):
+            raise ConfigError(f"{where}.bindings must be an object")
+        target = by_id.get(layer_id)
+        if target is None and item.get("removed") is True:
+            continue  # not a default layer, so there is nothing to remove
+        if target is None:
+            fresh = {k: v for k, v in item.items() if k != "removed"}
+            fresh["bindings"] = {b: v for b, v in bindings.items() if v is not None}
+            layers.append(fresh)
+            by_id[layer_id] = fresh
+            continue
+        if item.get("removed") is True:
+            removed.add(layer_id)
+            continue
+        for key in ("name", "key"):
+            if key in item:
+                target[key] = item[key]
+        for button, binding in bindings.items():
+            name = _button(button, f"{where}.bindings")
+            if binding is None:
+                target["bindings"].pop(name, None)
+            else:
+                target["bindings"][name] = binding
+    return [layer for layer in layers if layer["id"] not in removed]
+
+
 class Config:
     def __init__(self, raw: dict | None = None, path: Path | None = None):
         raw = copy.deepcopy(raw or {})
         self.path = Path(path or DEFAULT_PATH)
-        if raw.get("version", VERSION) != VERSION:
-            raise ConfigError(f"unsupported config version {raw.get('version')!r}")
+        # A file with no version predates version 2, so it is a full one.
+        version = raw.get("version", 1)
+        if version not in VERSIONS:
+            raise ConfigError(f"unsupported config version {version!r}")
         self.enabled = bool(raw.get("enabled", True))
 
         combo_raw = raw.get("toggleCombo", DEFAULT_TOGGLE_COMBO)
@@ -305,6 +362,8 @@ class Config:
             raise ConfigError("toggleCombo needs two or more different buttons, or [] for none")
 
         device = raw.get("device") or {}
+        if not isinstance(device, dict):
+            raise ConfigError("device must be an object")
         match = device.get("match", [])
         if isinstance(match, str):
             match = [match]
@@ -335,9 +394,12 @@ class Config:
         _number(self.mouse, "deadzone", "mouse", 0, 0.9)
         _number(self.mouse, "precision", "mouse", 0.01, 1)
 
-        layers = raw.get("layers")
-        if layers is None:
-            layers = copy.deepcopy(DEFAULT_LAYERS)
+        if version == 1:
+            layers = raw.get("layers")
+            if layers is None:
+                layers = copy.deepcopy(DEFAULT_LAYERS)
+        else:
+            layers = _merge_layers(raw.get("layers"))
         if not isinstance(layers, list) or not layers:
             raise ConfigError("layers must be a non-empty list")
         self.layers: list[Layer] = []
@@ -430,8 +492,9 @@ class Config:
     # -- persistence --------------------------------------------------------
 
     def to_json(self) -> dict:
+        """Everything, defaults filled in: a full (version 1) config."""
         return {
-            "version": VERSION,
+            "version": 1,
             "enabled": self.enabled,
             "toggleCombo": self.toggle_combo,
             "device": self.device,
@@ -440,23 +503,83 @@ class Config:
             "layers": [layer.to_json() for layer in self.layers],
         }
 
-    def save(self) -> Path:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(self.to_json(), indent=2) + "\n"
-        handle, temp = tempfile.mkstemp(dir=self.path.parent, prefix=".config.", suffix=".json")
+    def changes(self) -> dict:
+        """What differs from the defaults: the version 2 file save() writes."""
+        out: dict = {"version": 2, "enabled": self.enabled}
+        if self.toggle_combo != DEFAULT_TOGGLE_COMBO:
+            out["toggleCombo"] = self.toggle_combo
+        for name, current, default in (
+            ("device", self.device, DEFAULT_DEVICE),
+            ("timing", self.timing, DEFAULT_TIMING),
+            ("mouse", self.mouse, DEFAULT_MOUSE),
+        ):
+            changed = {k: v for k, v in current.items() if default.get(k) != v}
+            if changed:
+                out[name] = changed
+        defaults = {layer.id: layer for layer in Config({}).layers}
+        layers = []
+        ids = {layer.id for layer in self.layers}
+        for layer in self.layers:
+            default = defaults.get(layer.id)
+            if default is None:
+                layers.append(layer.to_json())
+                continue
+            entry: dict = {"id": layer.id}
+            if layer.name != default.name:
+                entry["name"] = layer.name
+            if layer.key != default.key:
+                entry["key"] = layer.key
+            bindings = {}
+            for button in BUTTONS:
+                mine, theirs = layer.bindings.get(button), default.bindings.get(button)
+                if mine != theirs:
+                    bindings[button] = mine.to_json() if mine else None
+            if bindings:
+                entry["bindings"] = bindings
+            if len(entry) > 1:
+                layers.append(entry)
+        layers += [{"id": i, "removed": True} for i in defaults if i not in ids]
+        if layers:
+            out["layers"] = layers
+        return out
+
+    def file_json(self) -> dict:
+        """What save() writes: the changes alone when they say it all.
+
+        Layers reordered, or a base layer of another name, cannot be said
+        as changes to the defaults; such a config is written in full.
+        """
+        changes = self.changes()
         try:
-            with os.fdopen(handle, "w") as out:
-                out.write(text)
-                out.flush()
-                os.fsync(out.fileno())
-            os.replace(temp, self.path)
-        except BaseException:
-            try:
-                os.unlink(temp)
-            except OSError:
-                pass
-            raise
-        return self.path
+            if Config(changes).to_json() == self.to_json():
+                return changes
+        except ConfigError:
+            pass
+        return self.to_json()
+
+    def save(self, full: bool = False) -> Path:
+        data = self.to_json() if full else self.file_json()
+        return write(self.path, data)
+
+
+def write(path: Path, data: dict) -> Path:
+    """Write the file atomically: a reader sees the old one or the new one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, indent=2) + "\n"
+    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".json")
+    try:
+        with os.fdopen(handle, "w") as out:
+            out.write(text)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        raise
+    return path
 
 
 def load(path: Path | str | None = None) -> Config:

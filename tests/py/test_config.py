@@ -1,8 +1,11 @@
 """Config validation, editing and round trips; key parsing; mouse maths."""
 
+import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import ROOT  # noqa: F401
 from padd.config import Action, Config, ConfigError, load
@@ -88,6 +91,97 @@ class TestEditing(unittest.TestCase):
             config.bind("text", "Y", "tap", Action("keys", "CTRL+SHIFT+Z", "Redo"))
             config.save()
             self.assertEqual(load(path).layer("text").bindings["Y"].tap.label, "Redo")
+
+
+class TestSavedChanges(unittest.TestCase):
+    """save() writes what differs from the defaults, so new defaults arrive."""
+
+    def saved(self, config):
+        with tempfile.TemporaryDirectory() as tmp:
+            config.path = Path(tmp) / "c.json"
+            config.save()
+            return json.loads(config.path.read_text())
+
+    def test_untouched_config_saves_only_the_switch(self):
+        self.assertEqual(self.saved(Config({})), {"version": 2, "enabled": True})
+
+    def test_a_new_default_reaches_a_saved_config(self):
+        config = Config({})
+        config.enabled = False
+        config.bind("text", "Y", "tap", Action("keys", "CTRL+SHIFT+Z", "Redo"))
+        saved = self.saved(config)
+        self.assertEqual(saved["layers"], [
+            {"id": "text", "bindings": {"Y": {"keys": "CTRL+SHIFT+Z", "label": "Redo"}}},
+        ])
+        # An update changes a default this user never touched.
+        from padd import config as module
+        layers = copy.deepcopy(module.DEFAULT_LAYERS)
+        layers[0]["bindings"]["X"] = {"keys": "NEXTSONG", "label": "New default"}
+        with mock.patch.object(module, "DEFAULT_LAYERS", layers):
+            again = Config(saved)
+        self.assertEqual(again.base.bindings["X"].tap.label, "New default")
+        self.assertEqual(again.layer("text").bindings["Y"].tap.label, "Redo")
+        self.assertFalse(again.enabled)
+
+    def test_a_deleted_default_stays_deleted(self):
+        config = Config({})
+        config.unbind("base", "Y")
+        config.unbind("system", "BACK", "hold")
+        saved = self.saved(config)
+        base, system = saved["layers"]
+        self.assertEqual(base, {"id": "base", "bindings": {"Y": None}})
+        self.assertEqual(system["bindings"]["BACK"], {"keys": "SUPER+CTRL+TAB", "label": "Former workspace"})
+        again = Config(saved)
+        self.assertNotIn("Y", again.base.bindings)
+        self.assertIsNone(again.layer("system").bindings["BACK"].hold)
+        self.assertEqual(again.to_json(), config.to_json())
+
+    def test_settings_save_only_what_changed(self):
+        config = Config({"mouse": {"speed": 1400}, "timing": {"holdMs": 400}, "toggleCombo": []})
+        saved = self.saved(config)
+        self.assertEqual(saved["mouse"], {"speed": 1400})
+        self.assertEqual(saved["timing"], {"holdMs": 400})
+        self.assertEqual(saved["toggleCombo"], [])
+        self.assertNotIn("device", saved)
+        self.assertEqual(Config(saved).to_json(), config.to_json())
+
+    def test_a_full_version_1_file_loads_as_it_is(self):
+        # As 0.1 wrote it: every layer in full, a binding deleted by the user.
+        full = Config({}).to_json()
+        del full["layers"][1]["bindings"]["Y"]
+        full["layers"].append({"id": "games", "name": "Games", "key": "L3",
+                               "bindings": {"A": {"keys": "SPACE"}}})
+        full["layers"][0]["bindings"].pop("L3")
+        config = Config(full)
+        self.assertNotIn("Y", config.layer("text").bindings)
+        self.assertEqual(config.layer("games").key, "L3")
+        # Saved again it becomes changes, and means the same.
+        saved = self.saved(config)
+        self.assertEqual(saved["version"], 2)
+        self.assertEqual(Config(saved).to_json(), config.to_json())
+        self.assertIn({"id": "text", "bindings": {"Y": None}}, saved["layers"])
+
+    def test_a_layer_removed_or_reordered(self):
+        full = Config({}).to_json()
+        del full["layers"][2]
+        saved = self.saved(Config(full))
+        self.assertIn({"id": "system", "removed": True}, saved["layers"])
+        self.assertEqual([l.id for l in Config(saved).layers], ["base", "text"])
+        # Not expressible as changes: written in full, still exact.
+        full = Config({}).to_json()
+        full["layers"][1:] = reversed(full["layers"][1:])
+        config = Config(full)
+        saved = self.saved(config)
+        self.assertEqual(saved["version"], 1)
+        self.assertEqual(Config(saved).to_json(), config.to_json())
+
+    def test_versions(self):
+        self.assertEqual(Config({"version": 2, "layers": [{"id": "base", "name": "Home"}]}).base.name, "Home")
+        with self.assertRaises(ConfigError):
+            Config({"version": 3})
+        # A version 2 change still has to make a valid config.
+        with self.assertRaises(ConfigError):
+            Config({"version": 2, "layers": [{"id": "base", "bindings": {"LT": {"keys": "A"}}}]})
 
 
 class TestKeys(unittest.TestCase):
