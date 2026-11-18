@@ -239,12 +239,15 @@ class TestDaemon(unittest.TestCase):
             self.assertIn("not saved", error["message"])
             self.daemon.wait("state", enabled=False)
             self.assertEqual(self.daemon.path.read_text(), broken, "the edit was overwritten")
-            # Fixed, and maybe not reloaded yet (the daemon looks again every
-            # couple of seconds): the switch lands in the new file either way.
+            # Fixed, and reloaded as the shell does on save. Waiting matters:
+            # a reload lets go of held buttons, and the daemon's own recheck
+            # could otherwise land mid-combo and swallow it.
             edited = json.loads(good)
             edited["enabled"] = False  # as switched; that was not saved
             edited["timing"] = {**TIMING, "holdMs": 310}
             self.daemon.write(edited)
+            self.daemon.send(cmd="reload")
+            self.daemon.wait("reloaded")
             self.combo()
             self.daemon.wait("state", enabled=True)
             self.assertEqual(json.loads(self.daemon.path.read_text()), {**edited, "enabled": True})
