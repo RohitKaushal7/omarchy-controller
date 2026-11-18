@@ -160,7 +160,9 @@ Out (one JSON object per line, all with `"event"`): `started`, `state`
 (connected, device, enabled, paused, mouse, precise, layer, configError), `pad` (a
 button went down or up, with the resolved layer), `layer` (active layer
 changed), `fire` (an action ran: button, layer, slot, label, ok),
-`error`, `stopped`.
+`connected` (a pad was opened: name, path, and `new`, false for one found
+at start-up or found again after a reload let go of it), `disconnected`,
+`reloaded`, `error`, `stopped`.
 
 In (one JSON object per line, `"cmd"`): `reload`, `pause`, `resume`,
 `mouse` (`on`, `off`, `toggle`), `state`, `quit`.
@@ -192,7 +194,10 @@ so a fix applies on save. The panel shows `configError` until then.
   other button pressed, a card at the bottom of the screen lists that
   layer's buttons. Pressing a button first means the layer is known, so the
   card is skipped for that hold. A short notice shows
-  when the mouse or precision mode is switched. Input passes through it.
+  when the mouse or precision mode is switched, and when a pad connects
+  while the shell runs (one found at start-up is not news, and a
+  disconnect shows nothing, as it can come in the middle of a film).
+  Input passes through it.
 - **IPC** target `dev.reuk.controller`: `status`, `reload`, `on`, `off`,
   `toggle`, `mouse`, `hint` (show the current layer's map).
 

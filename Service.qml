@@ -127,6 +127,9 @@ Item {
     case "connected":
       root.connected = true
       root.device = String(e.name || "")
+      // Only a pad that turns up while running: not the one found at
+      // start-up, and no notice on a disconnect, which could come mid-film.
+      if (e.new === true) hint.notice((root.device || "Controller") + " connected" + (root.switchedOn ? "" : "  ·  off"))
       break
     case "disconnected":
       root.held = []

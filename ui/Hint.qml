@@ -105,6 +105,8 @@ Item {
 
         Text {
           visible: root.mode === "notice"
+          // The device name comes from the pad: never markup.
+          textFormat: Text.PlainText
           text: root.message
           color: Color.popups.text
           font.family: Style.font.family

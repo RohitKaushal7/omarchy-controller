@@ -97,7 +97,7 @@ class TestDaemon(unittest.TestCase):
         cls.daemon = Daemon({"device": {"match": [TEST_MARK]}, "timing": TIMING})
         cls.daemon.wait("started")
         cls.pad = SyntheticPad()
-        cls.daemon.wait("connected", timeout=6, name=NAME)
+        cls.connected = cls.daemon.wait("connected", timeout=6, name=NAME)
 
     @classmethod
     def tearDownClass(cls):
@@ -106,6 +106,9 @@ class TestDaemon(unittest.TestCase):
 
     def setUp(self):
         self.daemon.drain()
+
+    def test_a_pad_plugged_in_while_running_is_news(self):
+        self.assertTrue(self.connected["new"])
 
     def test_tap(self):
         self.pad.tap("X")
@@ -309,6 +312,22 @@ class TestBrokenAtStart(unittest.TestCase):
 
 @needs_uinput
 class TestIsolation(unittest.TestCase):
+    def test_a_pad_there_at_start_or_regrabbed_is_not_news(self):
+        pad = SyntheticPad()
+        try:
+            daemon = Daemon({"device": {"match": [TEST_MARK]}, "timing": TIMING})
+            try:
+                self.assertFalse(daemon.wait("connected", timeout=6, name=NAME)["new"])
+                # A reload that changes the device settings lets go and finds it again.
+                daemon.write({"device": {"match": [TEST_MARK], "grab": True}, "timing": TIMING})
+                daemon.send(cmd="reload")
+                daemon.wait("disconnected", reason="reconfigured")
+                self.assertFalse(daemon.wait("connected", timeout=6, name=NAME)["new"])
+            finally:
+                daemon.stop()
+        finally:
+            pad.close()
+
     def test_default_match_ignores_synthetic_pads(self):
         daemon = Daemon({"timing": TIMING})
         try:

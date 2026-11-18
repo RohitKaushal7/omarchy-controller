@@ -43,6 +43,10 @@ class Daemon:
         self._stdin = b""
         self._stdin_open = True
         self._last_scan = 0.0
+        # Pads found by the first scan, or found again after a reload let go
+        # of them, were already there: their "connected" is not news.
+        self._scanned = False
+        self._quiet_scan = False
         self._reload = False
         self._wake_r = self._wake_w = -1
         # Set once the toggle combo fires, until all its buttons are up, so
@@ -83,6 +87,8 @@ class Daemon:
 
     def rescan(self) -> None:
         self._last_scan = time.monotonic()
+        new = self._scanned and not self._quiet_scan
+        self._scanned, self._quiet_scan = True, False
         found = {info.path: info for info in self.scanner.pads(self.config.device["match"])}
         changed = False
         for path in [p for p in self.pads if p not in found]:
@@ -102,7 +108,7 @@ class Daemon:
                 continue
             self.pads[path] = pad
             changed = True
-            self.emit("connected", **info.describe(), grabbed=pad.grabbed)
+            self.emit("connected", **info.describe(), grabbed=pad.grabbed, new=new)
         if changed:
             self.state()
 
@@ -264,6 +270,7 @@ class Daemon:
         if regrab:
             for path in list(self.pads):
                 self._drop(path, "reconfigured")
+            self._quiet_scan = True
         self.emit("reloaded")
         self.rescan()
         self.state()
