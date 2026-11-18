@@ -264,16 +264,17 @@ class Daemon:
             return None
         return (st.st_ino, st.st_size, st.st_mtime_ns)
 
-    def _config_broken(self, message: str) -> None:
+    def _config_broken(self, message: str, stamp=None) -> None:
         self.config_error = message
-        self._config_stamp = self._stamp()
+        self._config_stamp = stamp if stamp is not None else self._stamp()
 
     def _reload_config(self) -> None:
         self._reload = False
+        stamp = self._stamp()  # before the load: a fix saved during it is still a change
         try:
             config = load(self.config.path)
         except ConfigError as exc:
-            self._config_broken(f"{exc}; keeping the last config that loaded")
+            self._config_broken(f"{exc}; keeping the last config that loaded", stamp)
             self.emit("error", message=self.config_error)
             self.state()
             return

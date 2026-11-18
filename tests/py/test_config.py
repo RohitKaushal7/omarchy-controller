@@ -228,6 +228,31 @@ class TestBrokenFile(unittest.TestCase):
             self.assertIn("not valid JSON", error)
             self.assertEqual(load_or_defaults(Path(tmp) / "none.json")[1], "")
 
+    def test_unreadable_files_are_config_errors_not_crashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            path.write_bytes(b"\xff\xfe{")  # not UTF-8
+            self.assertIn("not UTF-8", load_or_defaults(path)[1])
+            path.unlink()
+            path.mkdir()  # a directory where the file should be
+            self.assertIn("cannot be read", load_or_defaults(path)[1])
+            path.rmdir()
+            path.write_text("[" * 100000)  # nests past the JSON parser's limit
+            self.assertTrue(load_or_defaults(path)[1])
+
+
+class TestSymlinkedConfig(unittest.TestCase):
+    def test_saving_writes_through_the_link(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real = Path(tmp) / "dotfiles" / "config.json"
+            real.parent.mkdir()
+            real.write_text(json.dumps({"version": 2, "enabled": True}))
+            link = Path(tmp) / "config.json"
+            link.symlink_to(real)
+            save_switch(link, False)
+            self.assertTrue(link.is_symlink(), "the link was replaced by a file")
+            self.assertFalse(json.loads(real.read_text())["enabled"])
+
 
 class TestKeys(unittest.TestCase):
     def test_names_and_aliases(self):

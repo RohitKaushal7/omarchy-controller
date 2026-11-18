@@ -581,7 +581,7 @@ def load_or_defaults(path: Path | str | None = None) -> tuple[Config, str]:
             raw = json.loads(target.read_text())
             if isinstance(raw, dict) and isinstance(raw.get("enabled"), bool):
                 enabled = raw["enabled"]
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             pass
         return Config({"enabled": enabled}, target), str(exc)
 
@@ -599,7 +599,7 @@ def save_switch(path: Path | str, on: bool) -> Path:
         return write(path, {"version": VERSION, "enabled": bool(on)})
     try:
         raw = json.loads(path.read_text())
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
         raise ConfigError(f"{path} is not valid JSON: {exc}") from None
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: the top level must be an object")
@@ -608,7 +608,12 @@ def save_switch(path: Path | str, on: bool) -> Path:
 
 
 def write(path: Path, data: dict) -> Path:
-    """Write the file atomically: a reader sees the old one or the new one."""
+    """Write the file atomically: a reader sees the old one or the new one.
+
+    A symlinked config (dotfiles) is written through to its target, so the
+    link survives; the temp file sits next to the target for the rename.
+    """
+    path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, indent=2) + "\n"
     handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".json")
@@ -635,6 +640,12 @@ def load(path: Path | str | None = None) -> Config:
         raw = json.loads(target.read_text())
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{target}: not valid JSON: {exc}") from None
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{target}: not UTF-8 text: {exc}") from None
+    except RecursionError:
+        raise ConfigError(f"{target}: nested too deeply") from None
+    except OSError as exc:  # a directory, no read permission, an I/O error
+        raise ConfigError(f"{target}: cannot be read: {exc.strerror or exc}") from None
     if not isinstance(raw, dict):
         raise ConfigError(f"{target}: the top level must be an object")
     return Config(raw, target)
