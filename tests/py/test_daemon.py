@@ -23,10 +23,13 @@ TIMING = {"holdMs": 300, "repeatDelayMs": 200, "repeatMs": 80, "hintDelayMs": 10
 
 
 class Daemon:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict | str):
         self.dir = tempfile.TemporaryDirectory()
         self.path = Path(self.dir.name) / "config.json"
-        self.write(config)
+        if isinstance(config, str):
+            self.path.write_text(config)
+        else:
+            self.write(config)
         self.events: queue.Queue = queue.Queue()
         self.seen: list[dict] = []
         self.proc = subprocess.Popen(
@@ -209,8 +212,10 @@ class TestDaemon(unittest.TestCase):
             self.assertIn("not saved", error["message"])
             self.daemon.wait("state", enabled=False)
             self.assertEqual(self.daemon.path.read_text(), broken, "the edit was overwritten")
-            # Fixed, but not reloaded yet: the switch lands in the new file.
+            # Fixed, and maybe not reloaded yet (the daemon looks again every
+            # couple of seconds): the switch lands in the new file either way.
             edited = json.loads(good)
+            edited["enabled"] = False  # as switched; that was not saved
             edited["timing"] = {**TIMING, "holdMs": 310}
             self.daemon.write(edited)
             self.combo()
@@ -220,6 +225,21 @@ class TestDaemon(unittest.TestCase):
             self.daemon.path.write_text(good)
             self.daemon.send(cmd="reload")
             self.daemon.wait("reloaded")
+
+    def test_a_failed_reload_is_reported_until_fixed(self):
+        good = self.daemon.path.read_text()
+        try:
+            self.daemon.path.write_text("{")
+            self.daemon.send(cmd="reload")
+            self.assertIn("keeping the last config", self.daemon.wait("state")["configError"])
+            self.daemon.drain()
+            self.pad.tap("X")  # the last good config still runs
+            self.assertEqual(self.daemon.fired(), ["base:Play / pause"])
+        finally:
+            self.daemon.path.write_text(good)
+            self.daemon.send(cmd="reload")
+            self.daemon.wait("reloaded")
+        self.assertEqual(self.daemon.wait("state")["configError"], "")
 
     def test_reload_picks_up_an_edit(self):
         config = json.loads(self.daemon.path.read_text())
@@ -235,6 +255,38 @@ class TestDaemon(unittest.TestCase):
             self.daemon.write({"device": {"match": [TEST_MARK]}, "timing": TIMING})
             self.daemon.send(cmd="reload")
             self.daemon.wait("reloaded")
+
+
+class TestBrokenAtStart(unittest.TestCase):
+    """A file that will not load at start-up leaves the pad working."""
+
+    def test_runs_on_defaults_and_picks_up_the_fix(self):
+        broken = '{"enabled": true, "device": {"match": ["%s"]},, }' % TEST_MARK
+        daemon = Daemon(broken)
+        try:
+            daemon.wait("started")
+            self.assertIn("not valid JSON", daemon.wait("error")["message"])
+            state = daemon.wait("state")
+            self.assertIn("running on the defaults", state["configError"])
+            self.assertTrue(state["enabled"])
+            time.sleep(0.3)
+            self.assertIsNone(daemon.proc.poll(), "the daemon exited")
+            self.assertEqual(daemon.path.read_text(), broken, "the file was rewritten")
+            # Fixed by hand, with no reload asked for: picked up by itself.
+            daemon.write({"device": {"match": [TEST_MARK]}, "timing": TIMING})
+            daemon.wait("reloaded", timeout=6)
+            self.assertEqual(daemon.wait("state")["configError"], "")
+        finally:
+            daemon.stop()
+
+    def test_keeps_a_readable_switch(self):
+        daemon = Daemon('{"enabled": false, "mouse": {"speed": "fast"}}')
+        try:
+            state = daemon.wait("state")
+            self.assertIn("mouse.speed", state["configError"])
+            self.assertFalse(state["enabled"])
+        finally:
+            daemon.stop()
 
 
 @needs_uinput

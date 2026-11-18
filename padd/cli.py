@@ -13,7 +13,9 @@ from pathlib import Path
 from . import linux
 from . import pad as padmod
 from .codes import HEADER, CodesUnavailable, table
-from .config import CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, load
+from .config import (
+    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, load, load_or_defaults,
+)
 from .output import backend
 
 
@@ -32,17 +34,15 @@ def _fail(message: str) -> int:
 def cmd_daemon(args) -> int:
     from .daemon import Daemon
 
-    try:
-        config = _config(args)
-    except ConfigError as exc:
-        print(json.dumps({"event": "error", "message": str(exc), "fatal": True}), flush=True)
-        return 1
+    # A broken file must not leave the pad dead: run on the defaults, say
+    # why, and pick the file up once it is fixed. The file is not rewritten.
+    config, error = load_or_defaults(args.config)
     # So an exec binding can call `padctl` by name.
     bin_dir = str(Path(__file__).resolve().parents[1] / "bin")
     path = os.environ.get("PATH", "")
     if bin_dir not in path.split(os.pathsep):
         os.environ["PATH"] = os.pathsep.join(p for p in (bin_dir, path) if p)
-    return Daemon(config, dry_run=args.dry_run).run()
+    return Daemon(config, dry_run=args.dry_run, config_error=error).run()
 
 
 def cmd_devices(args) -> int:
@@ -83,10 +83,16 @@ def cmd_monitor(args) -> int:
 
 
 def cmd_list(args) -> int:
-    config = _config(args)
     if args.json:
-        print(json.dumps({"path": str(config.path), **config.to_json()}))
+        # For the panel: what the daemon runs on when the file is broken (the
+        # defaults, at start-up), and why.
+        config, error = load_or_defaults(args.config)
+        out = {"path": str(config.path), **config.to_json()}
+        if error:
+            out["error"] = error
+        print(json.dumps(out))
         return 0
+    config = _config(args)
     for layer in config.layers:
         held = f"  (hold {layer.key})" if layer.key else ""
         print(f"{layer.name}{held}")

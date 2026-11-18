@@ -289,10 +289,16 @@ ColumnLayout {
   Text {
     Layout.fillWidth: true
     visible: text !== ""
-    text: root.service && root.service.lastError ? root.service.lastError : ""
+    textFormat: Text.PlainText
+    // The file's problem stays until it is fixed; anything else just done
+    // shows under it, once.
+    text: !root.service ? "" : [
+      root.service.configError ? "Config not loaded: " + root.service.configError : "",
+      root.service.lastError !== root.service.configError ? root.service.lastError : ""
+    ].filter(function(line) { return line !== "" }).join("\n")
     color: Color.urgent
     wrapMode: Text.WordWrap
-    maximumLineCount: 2
+    maximumLineCount: 3
     elide: Text.ElideRight
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption

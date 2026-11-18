@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import ROOT  # noqa: F401
-from padd.config import Action, Config, ConfigError, load, save_switch
+from padd.config import Action, Config, ConfigError, load, load_or_defaults, save_switch
 from padd.keymap import BadKeys, combo
 from padd.output import NOTCH, REL_WHEEL, REL_WHEEL_HI_RES, REL_X, REL_Y, Mouse, shape
 from padd import linux
@@ -210,6 +210,23 @@ class TestSwitchSave(unittest.TestCase):
             path = Path(tmp) / "sub" / "c.json"
             save_switch(path, False)
             self.assertFalse(load(path).enabled)
+
+
+class TestBrokenFile(unittest.TestCase):
+    def test_defaults_and_the_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            path.write_text('{"enabled": false, "timing": {"holdMs": "slow"}}')
+            config, error = load_or_defaults(path)
+            self.assertIn("holdMs", error)
+            self.assertFalse(config.enabled, "the switch should survive")
+            self.assertEqual(config.path, path)
+            self.assertEqual(config.base.name, "Browse")
+            path.write_text("not json")
+            config, error = load_or_defaults(path)
+            self.assertTrue(config.enabled)
+            self.assertIn("not valid JSON", error)
+            self.assertEqual(load_or_defaults(Path(tmp) / "none.json")[1], "")
 
 
 class TestKeys(unittest.TestCase):

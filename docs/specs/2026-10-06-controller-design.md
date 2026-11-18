@@ -152,13 +152,20 @@ time (for games); `mouse.enabled` is the persisted default.
 ## 7. Daemon protocol
 
 Out (one JSON object per line, all with `"event"`): `started`, `state`
-(connected, device, enabled, paused, mouse, precise, layer), `pad` (a
+(connected, device, enabled, paused, mouse, precise, layer, configError), `pad` (a
 button went down or up, with the resolved layer), `layer` (active layer
 changed), `fire` (an action ran: button, layer, slot, label, ok),
 `error`, `stopped`.
 
 In (one JSON object per line, `"cmd"`): `reload`, `pause`, `resume`,
 `mouse` (`on`, `off`, `toggle`), `state`, `quit`.
+
+A config file that will not load never stops the pad. At start-up the
+daemon runs on the defaults (keeping the file's `enabled` if it can be
+read); on a reload it keeps the config it has. Either way the file is not
+rewritten, `state.configError` says what is wrong until it loads, and the
+daemon checks the file again every couple of seconds while it is broken,
+so a fix applies on save. The panel shows `configError` until then.
 
 ## 8. Shell side
 

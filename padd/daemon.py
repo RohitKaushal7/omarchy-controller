@@ -21,8 +21,14 @@ RESCAN_S = 2.0
 
 
 class Daemon:
-    def __init__(self, config: Config, *, dry_run: bool = False, out=None):
+    def __init__(self, config: Config, *, dry_run: bool = False, out=None, config_error: str = ""):
         self.config = config
+        # Why the file on disk is not what runs: it failed to load, and the
+        # daemon runs on the defaults (at start-up) or the last good config.
+        self.config_error = ""
+        self._config_stamp = None
+        if config_error:
+            self._config_broken(f"{config_error}; running on the defaults until it is fixed")
         self.dry_run = dry_run
         self.out = out or sys.stdout
         self.scanner = Scanner()
@@ -65,6 +71,7 @@ class Daemon:
             precise=self.mouse.precise,
             layer=self.resolver.layer,
             config=str(self.config.path),
+            configError=self.config_error,
             output=self.output,
         )
 
@@ -223,13 +230,27 @@ class Daemon:
 
     # -- control ------------------------------------------------------------
 
+    def _stamp(self):
+        try:
+            st = os.stat(self.config.path)
+        except OSError:
+            return None
+        return (st.st_ino, st.st_size, st.st_mtime_ns)
+
+    def _config_broken(self, message: str) -> None:
+        self.config_error = message
+        self._config_stamp = self._stamp()
+
     def _reload_config(self) -> None:
         self._reload = False
         try:
             config = load(self.config.path)
         except ConfigError as exc:
-            self.emit("error", message=f"reload failed, keeping the old config: {exc}")
+            self._config_broken(f"{exc}; keeping the last config that loaded")
+            self.emit("error", message=self.config_error)
+            self.state()
             return
+        self.config_error = ""
         regrab = config.device != self.config.device
         default_changed = config.mouse["enabled"] != self.config.mouse["enabled"]
         self._settle()
@@ -308,6 +329,15 @@ class Daemon:
         # Commands we start are not waited for; never leave zombies.
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
+    def _recheck_config(self) -> None:
+        """While the file is broken, reload it once it changes.
+
+        The shell asks for a reload when the file changes; this covers a
+        daemon run without it, and a watch that is not set up yet.
+        """
+        if self.config_error and self._stamp() != self._config_stamp:
+            self._reload_config()
+
     def run(self) -> int:
         self.running = True
         self._signals()
@@ -316,6 +346,8 @@ class Daemon:
         except (OSError, ValueError):
             self._stdin_open = False
         self.emit("started", pid=os.getpid(), dryRun=self.dry_run, output=self.output)
+        if self.config_error:
+            self.emit("error", message=self.config_error)
         if not self.dry_run and not self.output:
             self.emit("error", message="nothing can receive keys or pointer motion: no Wayland "
                       "compositor with virtual keyboard and pointer support, and /dev/uinput is not writable")
@@ -366,6 +398,7 @@ class Daemon:
                     except OSError as exc:
                         self.emit("error", message=f"virtual mouse: {exc}")
             if now - self._last_scan >= RESCAN_S:
+                self._recheck_config()
                 self.rescan()
         self.shutdown()
         return 0

@@ -36,6 +36,9 @@ Item {
   property string activeLayer: "base"
   property var held: []
   property string lastError: ""
+  // The config file would not load, and why: the daemon runs on the defaults
+  // or the last good config meanwhile. Shown until the file is fixed.
+  property string configError: ""
   onLastErrorChanged: if (lastError !== "") errorTimer.restart()
   // A shown error is about something just done; it goes after a while.
   Timer {
@@ -119,6 +122,7 @@ Item {
       root.precise = e.precise === true
       root.activeLayer = String(e.layer || "base")
       root.configPath = String(e.config || root.configPath)
+      root.configError = String(e.configError || "")
       break
     case "connected":
       root.connected = true
@@ -162,7 +166,9 @@ Item {
         try {
           const parsed = JSON.parse(text)
           root.configPath = String(parsed.path || "")
-          root.config = parsed
+          // A broken file: keep showing what the daemon still runs, or at
+          // start-up the defaults it runs on.
+          if (!parsed.error || !root.config) root.config = parsed
         } catch (e) {}
       }
     }
@@ -256,7 +262,7 @@ Item {
       return JSON.stringify({ running: root.running, connected: root.connected, device: root.device,
                               enabled: root.switchedOn, paused: root.paused, mouse: root.mouseOn,
                               precise: root.precise, layer: root.activeLayer, held: root.held,
-                              config: root.configPath, error: root.lastError })
+                              config: root.configPath, configError: root.configError, error: root.lastError })
     }
     function reload(): string { root.refresh(); root.send("reload"); return "ok" }
     function on(): string { root.setEnabled(true); return "ok" }

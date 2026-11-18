@@ -562,6 +562,26 @@ class Config:
         return write(self.path, data)
 
 
+def load_or_defaults(path: Path | str | None = None) -> tuple[Config, str]:
+    """The config and "", or the defaults and why the file would not load.
+
+    For starting up with a broken file: the pad works meanwhile, and the
+    file is left for its owner to fix. Its switch is kept if it can be read.
+    """
+    target = Path(path or DEFAULT_PATH)
+    try:
+        return load(target), ""
+    except ConfigError as exc:
+        enabled = True
+        try:
+            raw = json.loads(target.read_text())
+            if isinstance(raw, dict) and isinstance(raw.get("enabled"), bool):
+                enabled = raw["enabled"]
+        except (OSError, ValueError):
+            pass
+        return Config({"enabled": enabled}, target), str(exc)
+
+
 def save_switch(path: Path | str, on: bool) -> Path:
     """Set `enabled` in the file on disk, leaving the rest as it is there.
 
