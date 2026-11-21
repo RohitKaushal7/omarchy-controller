@@ -356,6 +356,9 @@ class Config:
         if version not in VERSIONS:
             raise ConfigError(f"unsupported config version {version!r}")
         self.enabled = bool(raw.get("enabled", True))
+        # Set on switched_off()'s config, which stands in for a file that
+        # would not load: it can never be switched on.
+        self.stand_in = False
 
         combo_raw = raw.get("toggleCombo", DEFAULT_TOGGLE_COMBO)
         if not isinstance(combo_raw, list):
@@ -566,24 +569,39 @@ class Config:
         return write(self.path, data)
 
 
-def load_or_defaults(path: Path | str | None = None) -> tuple[Config, str]:
-    """The config and "", or the defaults and why the file would not load.
+def switched_off(path: Path | str | None = None) -> Config:
+    """What the daemon runs while the file will not load at start-up: nothing.
 
-    For starting up with a broken file: the pad works meanwhile, and the
-    file is left for its owner to fix. Its switch is kept if it can be read.
+    Off, with nothing bound, the stick mouse off, no grab and no toggle
+    combo. The file could not say what its owner wants, so nothing is
+    guessed: a pad they switched off stays off, and the shipped bindings
+    never land on buttons they rebound. Only a fixed file switches it on.
+    """
+    config = Config(
+        {
+            "enabled": False,
+            "toggleCombo": [],
+            "mouse": {"enabled": False},
+            "layers": [{"id": "base", "name": "Browse", "bindings": {}}],
+        },
+        path,
+    )
+    config.stand_in = True
+    return config
+
+
+def load_or_off(path: Path | str | None = None) -> tuple[Config, str]:
+    """The config and "", or switched_off() and why the file would not load.
+
+    For starting up: a missing file is the defaults (a first run), but one
+    that is there and will not load leaves the controller off until it is
+    fixed. The file is left for its owner to fix.
     """
     target = Path(path or DEFAULT_PATH)
     try:
         return load(target), ""
     except ConfigError as exc:
-        enabled = True
-        try:
-            raw = json.loads(target.read_text())
-            if isinstance(raw, dict) and isinstance(raw.get("enabled"), bool):
-                enabled = raw["enabled"]
-        except (OSError, ValueError, RecursionError):
-            pass
-        return Config({"enabled": enabled}, target), str(exc)
+        return switched_off(target), str(exc)
 
 
 def save_switch(path: Path | str, on: bool) -> Path:

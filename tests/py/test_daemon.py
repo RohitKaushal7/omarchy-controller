@@ -6,6 +6,7 @@ daemon already running on this machine never picks it up.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import queue
@@ -17,6 +18,8 @@ import unittest
 from pathlib import Path
 
 from helpers import NAME, ROOT, SyntheticPad
+from padd import daemon as padd_daemon
+from padd.config import load_or_off
 from padd.pad import TEST_MARK
 
 TIMING = {"holdMs": 300, "repeatDelayMs": 200, "repeatMs": 80, "hintDelayMs": 100}
@@ -288,35 +291,68 @@ class TestDaemon(unittest.TestCase):
 
 
 class TestBrokenAtStart(unittest.TestCase):
-    """A file that will not load at start-up leaves the pad working."""
+    """A file that will not load at start-up leaves the controller off."""
 
-    def test_runs_on_defaults_and_picks_up_the_fix(self):
+    def test_starts_off_and_picks_up_the_fix(self):
         broken = '{"enabled": true, "device": {"match": ["%s"]},, }' % TEST_MARK
         daemon = Daemon(broken)
         try:
             daemon.wait("started")
             self.assertIn("not valid JSON", daemon.wait("error")["message"])
             state = daemon.wait("state")
-            self.assertIn("running on the defaults", state["configError"])
-            self.assertTrue(state["enabled"])
+            self.assertIn("switched off until it is fixed", state["configError"])
+            self.assertFalse(state["enabled"], "a broken file switched the controller on")
+            self.assertFalse(state["mouse"], "a broken file switched the stick mouse on")
             time.sleep(0.3)
             self.assertIsNone(daemon.proc.poll(), "the daemon exited")
             self.assertEqual(daemon.path.read_text(), broken, "the file was rewritten")
-            # Fixed by hand, with no reload asked for: picked up by itself.
+            # Fixed by hand, with no reload asked for: picked up by itself,
+            # switch and all.
             daemon.write({"device": {"match": [TEST_MARK]}, "timing": TIMING})
             daemon.wait("reloaded", timeout=6)
-            self.assertEqual(daemon.wait("state")["configError"], "")
+            state = daemon.wait("state")
+            self.assertEqual(state["configError"], "")
+            self.assertTrue(state["enabled"])
         finally:
             daemon.stop()
 
-    def test_keeps_a_readable_switch(self):
-        daemon = Daemon('{"enabled": false, "mouse": {"speed": "fast"}}')
+    def test_off_even_when_the_file_says_on(self):
+        daemon = Daemon('{"enabled": true, "mouse": {"speed": "fast"}}')
         try:
             state = daemon.wait("state")
             self.assertIn("mouse.speed", state["configError"])
             self.assertFalse(state["enabled"])
         finally:
             daemon.stop()
+
+    def test_cannot_be_switched_on_until_it_loads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            # Valid JSON, so the switch could be saved into it, but no config.
+            broken = '{"enabled": false, "mouse": {"speed": "fast"}}'
+            path.write_text(broken)
+            config, error = load_or_off(path)
+            out = io.StringIO()
+            daemon = padd_daemon.Daemon(config, dry_run=True, out=out, config_error=error)
+            daemon.set_enabled(True)  # the toggle combo, were there one
+            events = [json.loads(line) for line in out.getvalue().splitlines()]
+            self.assertIn("cannot switch on", events[0]["message"])
+            self.assertFalse(events[-1]["enabled"])
+            self.assertFalse(daemon.live)
+            self.assertEqual(path.read_text(), broken, "the switch was saved")
+            # Nothing is bound, should anything get past the switch.
+            self.assertEqual(daemon.resolver.press("Y", 0.0) + daemon.resolver.release("Y", 0.1), [])
+            # Fixed: the file's own config, switch included, takes over.
+            # (Matching the test marker, so the rescan opens no real pad.)
+            path.write_text(json.dumps({"enabled": False, "device": {"match": [TEST_MARK]},
+                                        "mouse": {"speed": 900}}))
+            daemon._reload_config()
+            self.assertEqual(daemon.config_error, "")
+            self.assertFalse(daemon.config.enabled)
+            daemon.set_enabled(True)
+            self.assertTrue(daemon.live)
+            self.assertTrue(json.loads(path.read_text())["enabled"])
+            daemon.shutdown()
 
 
 @needs_uinput

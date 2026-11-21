@@ -25,11 +25,11 @@ class Daemon:
     def __init__(self, config: Config, *, dry_run: bool = False, out=None, config_error: str = ""):
         self.config = config
         # Why the file on disk is not what runs: it failed to load, and the
-        # daemon runs on the defaults (at start-up) or the last good config.
+        # daemon is switched off (at start-up) or runs the last good config.
         self.config_error = ""
         self._config_stamp = None
         if config_error:
-            self._config_broken(f"{config_error}; running on the defaults until it is fixed")
+            self._config_broken(f"{config_error}; switched off until it is fixed")
         self.dry_run = dry_run
         self.out = out or sys.stdout
         self.scanner = Scanner()
@@ -194,6 +194,11 @@ class Daemon:
 
     def set_enabled(self, on: bool) -> None:
         """Switch everything, and keep it that way across restarts."""
+        if on and self.config.stand_in:
+            # Nothing loaded yet: on would mean bindings nobody chose.
+            self.emit("error", message=f"cannot switch on until the config loads: {self.config_error}")
+            self.state()
+            return
         self._settle()
         self.config.enabled = on
         # Only the switch is written, into the file as it is on disk: the
@@ -274,7 +279,9 @@ class Daemon:
         try:
             config = load(self.config.path)
         except ConfigError as exc:
-            self._config_broken(f"{exc}; keeping the last config that loaded", stamp)
+            still = ("switched off until it is fixed" if self.config.stand_in
+                     else "keeping the last config that loaded")
+            self._config_broken(f"{exc}; {still}", stamp)
             self.emit("error", message=self.config_error)
             self.state()
             return

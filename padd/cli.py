@@ -14,7 +14,7 @@ from . import linux
 from . import pad as padmod
 from .codes import HEADER, CodesUnavailable, table
 from .config import (
-    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, load, load_or_defaults,
+    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, load, load_or_off,
 )
 from .output import backend
 
@@ -34,9 +34,10 @@ def _fail(message: str) -> int:
 def cmd_daemon(args) -> int:
     from .daemon import Daemon
 
-    # A broken file must not leave the pad dead: run on the defaults, say
-    # why, and pick the file up once it is fixed. The file is not rewritten.
-    config, error = load_or_defaults(args.config)
+    # A broken file must not stop the daemon, nor guess what its owner wants:
+    # run switched off with nothing bound, say why, and pick the file up once
+    # it is fixed. The file is not rewritten.
+    config, error = load_or_off(args.config)
     # So an exec binding can call `padctl` by name.
     bin_dir = str(Path(__file__).resolve().parents[1] / "bin")
     path = os.environ.get("PATH", "")
@@ -87,9 +88,9 @@ def cmd_monitor(args) -> int:
 
 def cmd_list(args) -> int:
     if args.json:
-        # For the panel: what the daemon runs on when the file is broken (the
-        # defaults, at start-up), and why.
-        config, error = load_or_defaults(args.config)
+        # For the panel: what the daemon runs on when the file is broken (at
+        # start-up, nothing: it is switched off), and why.
+        config, error = load_or_off(args.config)
         out = {"path": str(config.path), **config.to_json()}
         if error:
             out["error"] = error

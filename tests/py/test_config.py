@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import ROOT  # noqa: F401
-from padd.config import Action, Config, ConfigError, load, load_or_defaults, save_switch
+from padd.config import Action, Config, ConfigError, load, load_or_off, save_switch
 from padd.keymap import BadKeys, combo
 from padd.output import NOTCH, REL_WHEEL, REL_WHEEL_HI_RES, REL_X, REL_Y, Mouse, shape
 from padd import linux
@@ -213,32 +213,57 @@ class TestSwitchSave(unittest.TestCase):
 
 
 class TestBrokenFile(unittest.TestCase):
-    def test_defaults_and_the_reason(self):
+    """A file that is there but will not load starts the controller off."""
+
+    def assertOff(self, config):
+        self.assertFalse(config.enabled, "switched on")
+        self.assertTrue(config.stand_in)
+        self.assertEqual([layer.bindings for layer in config.layers], [{}], "something is bound")
+        self.assertFalse(config.mouse["enabled"], "the stick mouse is on")
+        self.assertFalse(config.device["grab"])
+        self.assertEqual(config.toggle_combo, [], "the combo could switch it on")
+
+    def test_off_with_nothing_bound_and_the_reason(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "c.json"
-            path.write_text('{"enabled": false, "timing": {"holdMs": "slow"}}')
-            config, error = load_or_defaults(path)
+            # It says on, but a file that does not load cannot be believed.
+            path.write_text('{"enabled": true, "timing": {"holdMs": "slow"}}')
+            config, error = load_or_off(path)
             self.assertIn("holdMs", error)
-            self.assertFalse(config.enabled, "the switch should survive")
+            self.assertOff(config)
             self.assertEqual(config.path, path)
-            self.assertEqual(config.base.name, "Browse")
-            path.write_text("not json")
-            config, error = load_or_defaults(path)
+            for text in ("not json", '{"enabled": false,, }', '["a list"]'):
+                path.write_text(text)
+                config, error = load_or_off(path)
+                self.assertTrue(error, text)
+                self.assertOff(config)
+
+    def test_a_missing_file_is_a_first_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config, error = load_or_off(Path(tmp) / "none.json")
+            self.assertEqual(error, "")
             self.assertTrue(config.enabled)
-            self.assertIn("not valid JSON", error)
-            self.assertEqual(load_or_defaults(Path(tmp) / "none.json")[1], "")
+            self.assertFalse(config.stand_in)
+            self.assertEqual(config.base.name, "Browse")
+            self.assertTrue(config.base.bindings)
 
     def test_unreadable_files_are_config_errors_not_crashes(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "c.json"
             path.write_bytes(b"\xff\xfe{")  # not UTF-8
-            self.assertIn("not UTF-8", load_or_defaults(path)[1])
+            config, error = load_or_off(path)
+            self.assertIn("not UTF-8", error)
+            self.assertOff(config)
             path.unlink()
             path.mkdir()  # a directory where the file should be
-            self.assertIn("cannot be read", load_or_defaults(path)[1])
+            config, error = load_or_off(path)
+            self.assertIn("cannot be read", error)
+            self.assertOff(config)
             path.rmdir()
             path.write_text("[" * 100000)  # nests past the JSON parser's limit
-            self.assertTrue(load_or_defaults(path)[1])
+            config, error = load_or_off(path)
+            self.assertTrue(error)
+            self.assertOff(config)
 
 
 class TestSymlinkedConfig(unittest.TestCase):

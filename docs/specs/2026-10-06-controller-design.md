@@ -113,6 +113,8 @@ changed that button:
   switch by setting `enabled` in the file as it is on disk, never by
   writing out its own copy, which may be older than a hand edit; a file
   that is not JSON is left alone, and the switch lasts until a restart.
+  While a file that failed to load at start-up keeps the controller off
+  (section 7), there is no combo, and nothing switches it on.
 - `device.match`: name substrings; empty means any gamepad. A device whose
   name contains `[padd-test]` is used only when `match` names it, so the
   test suite's synthetic pads can never drive a real desktop.
@@ -178,9 +180,14 @@ the pad's first report, which counts as none). `batteryLow` fires when it
 reads 15% or less, once, and again only after it charges or reads 20% or
 more.
 
-A config file that will not load never stops the pad. At start-up the
-daemon runs on the defaults (keeping the file's `enabled` if it can be
-read); on a reload it keeps the config it has. Either way the file is not
+A config file that will not load never stops the daemon. At start-up a
+file that is there but will not load (unreadable, not UTF-8, not JSON, or
+not a valid config) leaves the controller switched off, with nothing
+bound, the stick mouse off and no grab: the defaults could put actions on
+buttons the owner rebound, or switch on a pad they switched off. It cannot
+be switched on until the file loads, and the file's own `enabled` then
+applies. A missing file is a first run, and runs on the defaults. On a
+reload the daemon keeps the config it has. Either way the file is not
 rewritten, `state.configError` says what is wrong until it loads, and the
 daemon checks the file again every couple of seconds while it is broken,
 so a fix applies on save. The panel shows `configError` until then.

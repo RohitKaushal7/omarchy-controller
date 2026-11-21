@@ -39,8 +39,8 @@ Item {
   property string activeLayer: "base"
   property var held: []
   property string lastError: ""
-  // The config file would not load, and why: the daemon runs on the defaults
-  // or the last good config meanwhile. Shown until the file is fixed.
+  // The config file would not load, and why: the daemon is switched off (at
+  // start-up) or runs the last good config meanwhile. Shown until it is fixed.
   property string configError: ""
   onLastErrorChanged: if (lastError !== "") errorTimer.restart()
   // A shown error is about something just done; it goes after a while.
@@ -180,7 +180,7 @@ Item {
           const parsed = JSON.parse(text)
           root.configPath = String(parsed.path || "")
           // A broken file: keep showing what the daemon still runs, or at
-          // start-up the defaults it runs on.
+          // start-up nothing, as it runs nothing until the file is fixed.
           if (!parsed.error || !root.config) root.config = parsed
         } catch (e) {}
       }

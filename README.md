@@ -133,7 +133,10 @@ that layer. Then choose:
 Everything lives in `~/.config/dev.reuk.controller/config.json`. The panel
 and `padctl` edit it, it can be edited by hand, and changes apply on save.
 The file keeps only what you changed, with `null` for a default binding you
-removed, so new defaults from an update still arrive.
+removed, so new defaults from an update still arrive. If the file is there
+but will not load when the shell starts, the controller stays off, with
+nothing bound, and the panel says why; it switches back on, as the file
+says, once the file is fixed and saved.
 [The design](docs/specs/2026-10-06-controller-design.md) has the full format
 and the rules for layers, taps, holds and repeats.
 
