@@ -191,8 +191,13 @@ not a valid config) leaves the controller switched off, with nothing
 bound, the stick mouse off and no grab: the defaults could put actions on
 buttons the owner rebound, or switch on a pad they switched off. It cannot
 be switched on until the file loads, and the file's own `enabled` then
-applies. A missing file is a first run, and runs on the defaults. On a
-reload the daemon keeps the config it has. Either way the file is not
+applies. Only nothing at the path at all is a first run, on the defaults:
+a link to nowhere, a link loop, or a directory on the way that is a dead
+link, a file, or cannot be searched is a file that will not load, and no
+writer follows a dead link to create its target. On a reload the daemon
+keeps the config it has, and once a file has loaded (or failed to), its
+going away is an error too, never a return to the defaults; the switch is
+not saved into a new file meanwhile. Either way the file is not
 rewritten, `state.configError` says what is wrong until it loads, and the
 daemon checks the file again every couple of seconds while it is broken,
 so a fix applies on save. The panel shows `configError` until then.

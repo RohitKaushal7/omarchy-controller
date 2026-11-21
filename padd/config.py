@@ -9,6 +9,7 @@ import copy
 import fcntl
 import json
 import os
+import stat
 import tempfile
 import threading
 import time
@@ -366,6 +367,9 @@ class Config:
         # Set on switched_off()'s config, which stands in for a file that
         # would not load: it can never be switched on.
         self.stand_in = False
+        # Set by load() on a config read from its file (not the defaults of
+        # a first run): once there was a file, its going away is an error.
+        self.from_file = False
 
         combo_raw = raw.get("toggleCombo", DEFAULT_TOGGLE_COMBO)
         if not isinstance(combo_raw, list):
@@ -616,6 +620,66 @@ def load_or_off(path: Path | str | None = None) -> tuple[Config, str]:
 _locks = threading.local()  # lock file -> depth, for the thread holding it
 
 
+def absent(path: Path | str) -> bool:
+    """Whether nothing at all is at `path`: a first run, for the defaults.
+
+    False when something is there, even a link that points nowhere. Raises
+    ConfigError when it cannot be told (no permission on a directory, a
+    link loop) or when the way to it is broken (a directory on the way is a
+    link to nowhere, or a file): that is a move or a mistake, and running,
+    or writing, as on a first run would be a guess.
+    """
+    target = Path(os.path.abspath(path))
+    try:
+        os.lstat(target)
+        return False
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ConfigError(f"{target}: cannot be read: {exc.strerror or exc}") from None
+    for parent in target.parents:
+        try:
+            os.lstat(parent)
+        except FileNotFoundError:
+            continue  # missing too; made on the first save
+        except OSError as exc:
+            raise ConfigError(f"{target}: cannot be read: {exc.strerror or exc}") from None
+        try:
+            is_dir = stat.S_ISDIR(os.stat(parent).st_mode)
+        except OSError as exc:
+            raise ConfigError(
+                f"{target}: {parent} is a link to {os.path.realpath(parent)}, "
+                f"which cannot be reached: {exc.strerror or exc}"
+            ) from None
+        if not is_dir:
+            raise ConfigError(f"{target}: {parent} is not a directory")
+        return True
+    return True
+
+
+def _real(path: Path | str) -> Path:
+    """The real file behind `path`, to write or to lock beside.
+
+    A symlinked config (dotfiles) is written through to its target. Only
+    for a first run (nothing at `path`, see absent()) are missing
+    directories made; a link to nowhere is never followed into creating
+    its target or the directories above it.
+    """
+    target = Path(path)
+    if absent(target):
+        real = Path(os.path.realpath(target))
+        real.parent.mkdir(parents=True, exist_ok=True)
+        return real
+    try:
+        os.stat(target)
+    except OSError as exc:
+        raise ConfigError(
+            f"{target} is a link to {os.path.realpath(target)}, which cannot be "
+            f"reached ({exc.strerror or exc}); fix or remove the link"
+        ) from None
+    return Path(os.path.realpath(target))
+
+
 def lock_path(path: Path | str) -> Path:
     """The lock beside the file itself, for a config that is a symlink."""
     real = Path(os.path.realpath(path))
@@ -634,7 +698,8 @@ def editing(path: Path | str | None = None, wait: float | None = None):
     raises ConfigError, so a stuck writer cannot hang another for good.
     """
     target = Path(path or DEFAULT_PATH)
-    lock = lock_path(target)
+    real = _real(target)
+    lock = real.parent / f".{real.name}.lock"
     held = _locks.__dict__.setdefault("depth", {})
     key = str(lock)
     if held.get(key):
@@ -644,7 +709,6 @@ def editing(path: Path | str | None = None, wait: float | None = None):
         finally:
             held[key] -= 1
         return
-    lock.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
     try:
         deadline = time.monotonic() + (LOCK_WAIT_S if wait is None else wait)
@@ -667,7 +731,7 @@ def editing(path: Path | str | None = None, wait: float | None = None):
         os.close(fd)  # and with it the lock
 
 
-def save_switch(path: Path | str, on: bool) -> Path:
+def save_switch(path: Path | str, on: bool, create: bool = True) -> Path:
     """Set `enabled` in the file on disk, leaving the rest as it is there.
 
     For the toggle combo, which flips the switch from the daemon: its copy
@@ -675,10 +739,15 @@ def save_switch(path: Path | str, on: bool) -> Path:
     or one that failed to load), and saving that copy would undo the edit.
     A file that is not JSON is left alone, and ConfigError says why. The
     lock keeps a padctl edit from reading before this and writing after.
+    With no file, one holding just the switch is made, unless `create` is
+    false (the daemon's config came from a file that has since gone: a new
+    file would bring back the defaults), when ConfigError says so.
     """
     path = Path(path)
     with editing(path):
-        if not path.exists():
+        if absent(path):
+            if not create:
+                raise ConfigError(f"{path} is not there any more")
             return write(path, {"version": VERSION, "enabled": bool(on)})
         try:
             raw = json.loads(path.read_text())
@@ -695,12 +764,12 @@ def write(path: Path, data: dict) -> Path:
 
     A symlinked config (dotfiles) is written through to its target, so the
     link survives; the temp file sits next to the target for the rename.
-    It takes the lock itself, but whatever read the file to make `data`
-    must hold it from before that read: see editing().
+    A link to nowhere is refused (see _real()). It takes the lock itself,
+    but whatever read the file to make `data` must hold it from before
+    that read: see editing().
     """
     with editing(path):
-        path = Path(os.path.realpath(path))
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = _real(path)
         text = json.dumps(data, indent=2) + "\n"
         handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".json")
         try:
@@ -718,9 +787,17 @@ def write(path: Path, data: dict) -> Path:
         return path
 
 
-def load(path: Path | str | None = None) -> Config:
+def load(path: Path | str | None = None, missing_ok: bool = True) -> Config:
+    """The config in the file, or the defaults when nothing is there.
+
+    Only nothing at all is a first run: a link to nowhere, a link loop, or
+    a directory that cannot be searched raises ConfigError, as does a
+    missing file when `missing_ok` is false (a reload, after a file).
+    """
     target = Path(path or DEFAULT_PATH)
-    if not target.exists():
+    if absent(target):
+        if not missing_ok:
+            raise ConfigError(f"{target} is not there any more")
         return Config({}, target)
     try:
         raw = json.loads(target.read_text())
@@ -730,8 +807,11 @@ def load(path: Path | str | None = None) -> Config:
         raise ConfigError(f"{target}: not UTF-8 text: {exc}") from None
     except RecursionError:
         raise ConfigError(f"{target}: nested too deeply") from None
-    except OSError as exc:  # a directory, no read permission, an I/O error
-        raise ConfigError(f"{target}: cannot be read: {exc.strerror or exc}") from None
+    except OSError as exc:  # a directory, no read permission, a link to nowhere
+        where = f" (a link to {os.path.realpath(target)})" if target.is_symlink() else ""
+        raise ConfigError(f"{target}{where}: cannot be read: {exc.strerror or exc}") from None
     if not isinstance(raw, dict):
         raise ConfigError(f"{target}: the top level must be an object")
-    return Config(raw, target)
+    config = Config(raw, target)
+    config.from_file = True
+    return config

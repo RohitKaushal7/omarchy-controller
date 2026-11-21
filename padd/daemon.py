@@ -204,7 +204,9 @@ class Daemon:
         # Only the switch is written, into the file as it is on disk: the
         # config in memory may be older than a hand edit.
         try:
-            save_switch(self.config.path, on)
+            # Not into a file that has gone: a new one would hold the switch
+            # and nothing else, and the reload would bring back the defaults.
+            save_switch(self.config.path, on, create=not self.config.from_file)
         except ConfigError as exc:
             self.emit("error", message=f"switched {'on' if on else 'off'} until restart, not saved: {exc}")
         except OSError as exc:
@@ -277,7 +279,10 @@ class Daemon:
         self._reload = False
         stamp = self._stamp()  # before the load: a fix saved during it is still a change
         try:
-            config = load(self.config.path)
+            # A file that loaded once (or would not load) and has now gone is
+            # an error, not a first run: never swap the defaults in for it.
+            had_file = self.config.from_file or self.config.stand_in
+            config = load(self.config.path, missing_ok=not had_file)
         except ConfigError as exc:
             still = ("switched off until it is fixed" if self.config.stand_in
                      else "keeping the last config that loaded")

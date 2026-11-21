@@ -14,7 +14,8 @@ from . import linux
 from . import pad as padmod
 from .codes import HEADER, CodesUnavailable, table
 from .config import (
-    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, editing, load, load_or_off,
+    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, absent, editing, load,
+    load_or_off,
 )
 from .output import backend
 
@@ -182,7 +183,7 @@ def cmd_set(args) -> int:
 def cmd_init(args) -> int:
     path = Path(args.config or DEFAULT_PATH)
     with editing(path):
-        if path.exists() and not args.force:
+        if not absent(path) and not args.force:
             return _fail(f"{path} exists (--force to overwrite)")
         # Every default written out, to edit by hand. The next save from the
         # panel or padctl keeps only what was changed.

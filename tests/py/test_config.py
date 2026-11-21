@@ -366,6 +366,83 @@ class TestBrokenFile(unittest.TestCase):
             self.assertOff(config)
 
 
+class TestNothingThereVersusBroken(unittest.TestCase):
+    """Only nothing at the path is a first run; a broken way to it is not."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+
+    def assertBroken(self, path, *, gone=()):
+        with self.assertRaises(ConfigError):
+            load(path)
+        config, error = load_or_off(path)
+        self.assertTrue(error)
+        self.assertFalse(config.enabled, "started on the defaults")
+        self.assertTrue(config.stand_in)
+        # Nor may a writer follow it, creating what it points at.
+        with self.assertRaises(ConfigError):
+            save_switch(path, False)
+        with self.assertRaises(ConfigError):
+            Config({}, path).save()
+        with mock.patch("sys.stderr"), mock.patch("builtins.print"):
+            self.assertEqual(cli.main(["--config", str(path), "init"]), 1)
+            self.assertEqual(cli.main(["--config", str(path), "set", "mouse.speed", "900"]), 1)
+        for made in gone:
+            self.assertFalse(os.path.lexists(made), f"{made} was created")
+
+    def test_a_link_to_nowhere(self):
+        link = self.dir / "config.json"
+        target = self.dir / "dotfiles" / "moved" / "config.json"
+        link.symlink_to(target)
+        self.assertBroken(link, gone=[target.parent.parent])
+        self.assertIn("a link to", load_or_off(link)[1])
+        self.assertTrue(link.is_symlink())
+
+    def test_a_link_loop(self):
+        a, b = self.dir / "a.json", self.dir / "b.json"
+        a.symlink_to(b)
+        b.symlink_to(a)
+        self.assertBroken(a)
+
+    def test_a_directory_on_the_way_that_is_a_link_to_nowhere(self):
+        conf = self.dir / "dev.reuk.controller"
+        target = self.dir / "dotfiles" / "dev.reuk.controller"
+        conf.symlink_to(target)
+        self.assertBroken(conf / "config.json", gone=[target.parent])
+
+    def test_a_file_on_the_way(self):
+        (self.dir / "plain").write_text("")
+        self.assertBroken(self.dir / "plain" / "config.json")
+
+    @unittest.skipIf(os.geteuid() == 0, "root searches any directory")
+    def test_a_directory_that_cannot_be_searched(self):
+        locked = self.dir / "locked"
+        locked.mkdir()
+        (locked / "config.json").write_text(json.dumps({"version": 2, "enabled": False}))
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o700)
+        self.assertBroken(locked / "config.json")
+
+    def test_nothing_there_is_a_first_run(self):
+        path = self.dir / "new" / "dir" / "config.json"
+        config = load(path)
+        self.assertTrue(config.enabled)
+        self.assertFalse(config.from_file)
+        save_switch(path, False)  # makes the directories, for a first run only
+        self.assertTrue(load(path).from_file)
+
+    def test_gone_after_a_file_is_an_error_when_asked(self):
+        path = self.dir / "config.json"
+        with self.assertRaises(ConfigError) as caught:
+            load(path, missing_ok=False)
+        self.assertIn("not there any more", str(caught.exception))
+        with self.assertRaises(ConfigError):
+            save_switch(path, False, create=False)
+        self.assertFalse(os.path.lexists(path))
+
+
 class TestSymlinkedConfig(unittest.TestCase):
     def test_saving_writes_through_the_link(self):
         with tempfile.TemporaryDirectory() as tmp:

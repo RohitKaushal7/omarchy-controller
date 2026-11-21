@@ -355,6 +355,83 @@ class TestBrokenAtStart(unittest.TestCase):
             daemon.shutdown()
 
 
+class TestFileGone(unittest.TestCase):
+    """A file that loaded, then went, never brings back the defaults."""
+
+    def daemon(self, path):
+        config, error = load_or_off(path)
+        self.out = io.StringIO()
+        daemon = padd_daemon.Daemon(config, dry_run=True, out=self.out, config_error=error)
+        daemon.scanner.pads = lambda match: []  # never open a real pad
+        self.addCleanup(daemon.shutdown)
+        return daemon
+
+    def events(self):
+        return [json.loads(line) for line in self.out.getvalue().splitlines()]
+
+    def test_deleted_while_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            # Switched off, Y rebound; matching the test marker, so no
+            # rescan opens a real pad.
+            saved = {"version": 2, "enabled": False, "device": {"match": [TEST_MARK]},
+                     "layers": [{"id": "base", "bindings": {"Y": {"keys": "A", "label": "Mine"}}}]}
+            path.write_text(json.dumps(saved))
+            daemon = self.daemon(path)
+            path.unlink()  # deleted, moved away, or an editor between unlink and write
+            daemon._reload_config()
+            self.assertIn("not there any more", daemon.config_error)
+            self.assertIn("keeping the last config", daemon.config_error)
+            self.assertFalse(daemon.config.enabled, "the defaults switched it back on")
+            self.assertEqual(daemon.config.base.bindings["Y"].tap.label, "Mine")
+            # The combo's switch is not saved into a new file of its own,
+            # which the next reload would fill out with the defaults.
+            daemon.set_enabled(True)
+            self.assertFalse(os.path.lexists(path), "a new file was made")
+            self.assertIn("not saved", [e for e in self.events() if e["event"] == "error"][-1]["message"])
+            daemon.set_enabled(False)
+            # Back again: loaded as usual.
+            path.write_text(json.dumps(saved))
+            daemon._reload_config()
+            self.assertEqual(daemon.config_error, "")
+            self.assertFalse(daemon.config.enabled)
+
+    def test_a_dotfiles_move_leaves_a_link_to_nowhere(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real = Path(tmp) / "dotfiles" / "config.json"
+            real.parent.mkdir()
+            real.write_text(json.dumps({"version": 2, "enabled": False, "device": {"match": [TEST_MARK]}}))
+            link = Path(tmp) / "config.json"
+            link.symlink_to(real)
+            daemon = self.daemon(link)
+            real.parent.rename(Path(tmp) / "elsewhere")
+            daemon._reload_config()
+            self.assertIn("a link to", daemon.config_error)
+            self.assertFalse(daemon.config.enabled)
+            daemon.set_enabled(True)
+            self.assertFalse(real.parent.exists(), "the link's target was made")
+
+    def test_deleted_while_switched_off_for_a_broken_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text("{")
+            daemon = self.daemon(path)
+            path.unlink()
+            daemon._reload_config()
+            self.assertTrue(daemon.config.stand_in, "the defaults took over")
+            self.assertIn("switched off until it is fixed", daemon.config_error)
+
+    def test_no_file_from_the_start_is_a_first_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            daemon = self.daemon(path)
+            self.assertTrue(daemon.config.enabled)
+            daemon._reload_config()  # still none: still the defaults, no error
+            self.assertEqual(daemon.config_error, "")
+            daemon.set_enabled(False)  # the first save makes the file
+            self.assertFalse(json.loads(path.read_text())["enabled"])
+
+
 @needs_uinput
 class TestIsolation(unittest.TestCase):
     def test_a_pad_there_at_start_or_regrabbed_is_not_news(self):
