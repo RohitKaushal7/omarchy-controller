@@ -74,17 +74,31 @@ class Connection:
             raise WaylandError(errno.ENOENT, "XDG_RUNTIME_DIR is not set")
         path = display if display.startswith("/") else os.path.join(runtime, display)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        # Bounded from the connect through the handshake: a wedged
+        # compositor whose queue of new clients is full would otherwise
+        # hold a blocking connect, or the first sends, for good.
+        self.sock.settimeout(ROUNDTRIP_S)
         try:
             self.sock.connect(path)
+        except TimeoutError:
+            self.sock.close()
+            raise WaylandError(errno.ETIMEDOUT, f"the compositor at {path} did not accept") from None
         except OSError as exc:
             self.sock.close()
             raise WaylandError(exc.errno, f"no Wayland compositor at {path}") from exc
         self._next_id = 2  # 1 is wl_display
         self._buffer = b""
         self.globals: dict[str, tuple[int, int]] = {}  # interface -> (name, version)
-        self.registry = self._new_id()
-        self._request(1, 1, struct.pack("<I", self.registry))  # wl_display.get_registry
-        self.roundtrip()
+        try:
+            self.registry = self._new_id()
+            self._request(1, 1, struct.pack("<I", self.registry))  # wl_display.get_registry
+            self.roundtrip()
+        except BaseException:
+            self.sock.close()
+            raise
+        # From here on, sends block as they always have; each read in a
+        # roundtrip sets its own bound.
+        self.sock.setblocking(True)
 
     # -- wire ---------------------------------------------------------------
 
@@ -100,6 +114,8 @@ class Connection:
                 self.sock.sendall(message)
             else:
                 self.sock.sendmsg([message], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [fd]))])
+        except TimeoutError:
+            raise WaylandError(errno.ETIMEDOUT, "the compositor is not reading") from None
         except OSError as exc:
             raise WaylandError(exc.errno, f"compositor connection lost: {exc}") from exc
 

@@ -152,6 +152,7 @@ class WaylandTest(unittest.TestCase):
     def test_the_socket_is_left_blocking(self):
         conn = wayland.Connection()
         try:
+            self.assertIsNone(conn.sock.gettimeout(), "the handshake's bound outlived it")
             conn.roundtrip()
             self.assertIsNone(conn.sock.gettimeout())
             conn.drain()
@@ -169,7 +170,7 @@ class WaylandTest(unittest.TestCase):
 
 
 class SilentCompositorTest(unittest.TestCase):
-    """A compositor that takes the connection and never answers."""
+    """A compositor that has stopped answering, or accepting."""
 
     def test_the_handshake_gives_up(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -201,6 +202,49 @@ class SilentCompositorTest(unittest.TestCase):
                 self.assertEqual(outcome["error"].errno, errno.ETIMEDOUT)
                 self.assertLess(took, 2)
             finally:
+                server.close()
+
+    def test_a_full_queue_of_new_clients_fails_the_connect(self):
+        # A compositor that stopped accepting: its listen queue is full, so
+        # a blocking connect would wait for it for good.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "wedged-0")
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(path)
+            server.listen(0)
+            queued = []
+            try:
+                while True:
+                    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    client.setblocking(False)
+                    queued.append(client)
+                    try:
+                        client.connect(path)
+                    except BlockingIOError:
+                        break  # full
+                    self.assertLess(len(queued), 64, "the queue never filled")
+                outcome = {}
+
+                def connect():
+                    try:
+                        wayland.Connection().close()
+                        outcome["error"] = None
+                    except wayland.WaylandError as exc:
+                        outcome["error"] = exc
+
+                env = {"XDG_RUNTIME_DIR": tmp, "WAYLAND_DISPLAY": path}
+                with mock.patch.dict(os.environ, env), mock.patch.object(wayland, "ROUNDTRIP_S", 0.3):
+                    start = time.monotonic()
+                    thread = threading.Thread(target=connect, daemon=True)
+                    thread.start()
+                    thread.join(5)
+                    took = time.monotonic() - start
+                self.assertFalse(thread.is_alive(), "the connect is still waiting")
+                self.assertIsInstance(outcome["error"], wayland.WaylandError)
+                self.assertLess(took, 2)
+            finally:
+                for client in queued:
+                    client.close()
                 server.close()
 
 
