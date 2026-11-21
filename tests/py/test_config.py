@@ -170,6 +170,23 @@ class TestSavedChanges(unittest.TestCase):
         self.assertEqual(Config(saved).to_json(), config.to_json())
         self.assertIn({"id": "text", "bindings": {"Y": None}}, saved["layers"])
 
+    def test_version_1_dictation_follows_omarchy(self):
+        # 0.1 wrote its voxtype default into every file; it is read as the
+        # default it was, so Y follows the backend picked in Omarchy.
+        full = Config({}).to_json()
+        full["version"] = 1
+        full["layers"][0]["bindings"]["Y"] = {"exec": "voxtype record toggle", "label": "Dictation"}
+        config = Config(full)
+        self.assertEqual(config.to_json()["layers"][0]["bindings"]["Y"]["exec"], "omarchy-dictation toggle")
+        # Saved again, the swapped default is no change at all.
+        self.assertNotIn("layers", self.saved(config))
+        # Wherever it sits, a hold slot included.
+        full["layers"][2]["bindings"]["B"] = {"tap": {"keys": "A"}, "hold": {"exec": "voxtype record toggle"}}
+        self.assertEqual(Config(full).to_json()["layers"][2]["bindings"]["B"]["hold"]["exec"], "omarchy-dictation toggle")
+        # Version 2 holds only choices, so a voxtype binding there stays.
+        own = Config({"version": 2, "layers": [{"id": "base", "bindings": {"Y": {"exec": "voxtype record toggle"}}}]})
+        self.assertEqual(own.to_json()["layers"][0]["bindings"]["Y"]["exec"], "voxtype record toggle")
+
     def test_a_layer_removed_or_reordered(self):
         full = Config({}).to_json()
         del full["layers"][2]

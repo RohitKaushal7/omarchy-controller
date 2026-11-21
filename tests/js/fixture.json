@@ -47,7 +47,7 @@
           "label": "Play / pause"
         },
         "Y": {
-          "exec": "voxtype record toggle",
+          "exec": "omarchy-dictation toggle",
           "label": "Dictation"
         },
         "LB": {

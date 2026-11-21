@@ -44,7 +44,7 @@ Then three things make it easy to learn:
 | **A** | Click, hold to drag | Enter | Video fullscreen (`F`) |
 | **B** | Back | Backspace, repeats | Close window, on a hold |
 | **X** | Play / pause | Delete word, repeats | Next track |
-| **Y** | Dictation ([voxtype](https://voxtype.io)) | Undo | Screenshot |
+| **Y** | Dictation (`omarchy-dictation`) | Undo | Screenshot |
 | **D-pad ↑ ↓** | Arrows, repeat | Start / end of line | Volume, repeats |
 | **D-pad ← →** | Arrows, repeat (seek a video) | Word left / right | Focus window left / right |
 | **LB / RB** | Previous / next workspace; hold to take the window along | Copy / paste | Previous / next tab |
@@ -99,9 +99,12 @@ Wired, Bluetooth and the Xbox wireless adapter all work:
   [`xone`](https://github.com/dlundqvist/xone) driver; without it the pad
   does not appear at all.
 
-Optional: Y in Browse runs `voxtype record toggle` for dictation. Without
-[voxtype](https://voxtype.io) installed it does nothing;
-rebind it in the panel.
+Optional: Y in Browse runs `omarchy-dictation toggle`, Omarchy's own
+dictation command, so it records with whichever backend you picked in
+*Setup > Defaults > Dictation* (voxtype, superwhisper, ...). With none
+picked it does nothing; pick one there, or rebind Y in the panel. A config
+saved by 0.1 holds its old `voxtype record toggle` default, and is read as
+the new one.
 
 ## The panel
 

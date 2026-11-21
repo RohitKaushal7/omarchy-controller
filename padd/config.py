@@ -82,6 +82,27 @@ def _move(workspace, label):
     return {"exec": f"hyprctl dispatch '{lua}'", "label": label}
 
 
+# Omarchy's dictation command runs whichever backend the user picked in
+# Setup > Defaults > Dictation (voxtype, superwhisper, ...).
+DICTATION = "omarchy-dictation toggle"
+# What 0.1 shipped instead. Version 1 files hold every default of their
+# day, so this one is read as the default it was, not a choice.
+OLD_DICTATION = "voxtype record toggle"
+
+
+def _old_defaults_updated(layers):
+    """Version 1 layers with 0.1's dictation command swapped for Omarchy's."""
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("exec") == OLD_DICTATION:
+                node = {**node, "exec": DICTATION}
+            return {key: walk(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        return node
+    return walk(layers)
+
+
 # Browse with the sticks and face buttons, hold LT for text editing, hold
 # RT for the system. A button keeps a related job in every layer: B goes
 # back, deletes, and closes; the d-pad moves, jumps words, and moves focus.
@@ -93,7 +114,7 @@ DEFAULT_LAYERS = [
             "A": {"click": "left", "label": "Click"},
             "B": {"click": "back", "label": "Back"},
             "X": _k("PLAYPAUSE", "Play / pause"),
-            "Y": {"exec": "voxtype record toggle", "label": "Dictation"},
+            "Y": {"exec": DICTATION, "label": "Dictation"},
             "UP": _k("UP", "Up", True),
             "DOWN": _k("DOWN", "Down", True),
             "LEFT": _k("LEFT", "Left / seek back", True),
@@ -416,6 +437,8 @@ class Config:
             layers = raw.get("layers")
             if layers is None:
                 layers = copy.deepcopy(DEFAULT_LAYERS)
+            else:
+                layers = _old_defaults_updated(layers)
         else:
             layers = _merge_layers(raw.get("layers"))
         if not isinstance(layers, list) or not layers:
