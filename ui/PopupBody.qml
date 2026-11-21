@@ -30,22 +30,27 @@ ColumnLayout {
   property string filter: "all"
   property bool editorOpen: false
   property string editingId: ""
-  readonly property string query: search.text
+  // The search text. The field that edits it exists only while the popup
+  // is open (searchLoader), so the text is kept here.
+  property string query: ""
+  property bool searchFocused: false
   // Holding a layer key while the popup is open shows that layer: the
   // quickest way to learn it.
   readonly property string shownLayer: liveLayer !== "base" && query === "" && !editorOpen ? liveLayer : filter
   readonly property var groups: Bindings.groups(config, query, shownLayer)
   readonly property int total: Bindings.count(config)
-  readonly property bool typing: search.activeFocus || (editorLoader.item && editorLoader.item.textFocused)
+  readonly property bool typing: searchFocused || (editorLoader.item && editorLoader.item.textFocused)
 
   signal closeRequested()
+  // To the search field, when it exists: take the keyboard focus.
+  signal searchFocusRequested()
 
   spacing: Style.space(12)
 
   // A key typed anywhere in the popup starts a search.
   function focusSearch(text) {
-    if (text) search.text += text
-    search.forceActiveFocus()
+    if (text) query += text
+    searchFocusRequested()
   }
 
   function openEditor(draft, id) {
@@ -165,15 +170,33 @@ ColumnLayout {
     Layout.fillWidth: true
     spacing: Style.space(8)
 
-    TextField {
-      id: search
+    // Only while the popup is open: an editable Qt text field watches the
+    // clipboard (to know whether it could paste), so a field kept while the
+    // popup is closed would have the shell read the clipboard whenever
+    // another app copies, and a stuck transfer could stall the shell.
+    // Every text field here is in a Loader gated on `opened`;
+    // tests/py/test_qml_guard.py checks that.
+    Loader {
+      id: searchLoader
       Layout.fillWidth: true
-      foreground: root.ink
-      font.family: root.fontFamily
-      placeholderText: "Search " + root.total + " bindings"
-      Keys.onEscapePressed: {
-        if (text !== "") text = ""
-        else root.closeRequested()
+      active: root.opened
+      sourceComponent: TextField {
+        id: search
+        foreground: root.ink
+        font.family: root.fontFamily
+        placeholderText: "Search " + root.total + " bindings"
+        text: root.query
+        onTextEdited: root.query = text
+        onActiveFocusChanged: root.searchFocused = activeFocus
+        Component.onDestruction: root.searchFocused = false
+        Keys.onEscapePressed: {
+          if (root.query !== "") root.query = ""
+          else root.closeRequested()
+        }
+        Connections {
+          target: root
+          function onSearchFocusRequested() { search.forceActiveFocus() }
+        }
       }
     }
     PanelActionButton {
@@ -307,7 +330,8 @@ ColumnLayout {
   Loader {
     id: editorLoader
     Layout.fillWidth: true
-    active: root.editorOpen
+    // Its text fields too exist only while the popup is open (see search).
+    active: root.opened && root.editorOpen
     // A Loader keeps its last size after unloading, which would leave the
     // closed form's height as empty space under the list.
     visible: active
@@ -326,7 +350,7 @@ ColumnLayout {
       Qt.callLater(function() { root.focusSearch("") })
     } else {
       closeEditor()
-      search.text = ""
+      query = ""
     }
   }
 }
