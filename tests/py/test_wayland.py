@@ -7,12 +7,15 @@ wire format is checked without touching the real session.
 from __future__ import annotations
 
 import array
+import errno
 import os
 import socket
 import struct
 import tempfile
 import threading
+import time
 import unittest
+from unittest import mock
 
 from helpers import ROOT  # noqa: F401
 from padd import linux, wayland
@@ -146,6 +149,16 @@ class WaylandTest(unittest.TestCase):
         self.assertEqual((axis, value), (1, int(7.5 * 256)))  # right is positive
         mouse.close()
 
+    def test_the_socket_is_left_blocking(self):
+        conn = wayland.Connection()
+        try:
+            conn.roundtrip()
+            self.assertIsNone(conn.sock.gettimeout())
+            conn.drain()
+            self.assertIsNone(conn.sock.gettimeout())
+        finally:
+            conn.close()
+
     def test_missing_protocol_is_reported(self):
         GLOBALS.remove((wayland.POINTER_MANAGER, 2))
         try:
@@ -153,6 +166,42 @@ class WaylandTest(unittest.TestCase):
                 wayland.VirtualPointer().open()
         finally:
             GLOBALS.append((wayland.POINTER_MANAGER, 2))
+
+
+class SilentCompositorTest(unittest.TestCase):
+    """A compositor that takes the connection and never answers."""
+
+    def test_the_handshake_gives_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "silent-0")
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(path)
+            server.listen(1)  # connects, never accepted, never answered
+            outcome = {}
+
+            def connect():
+                try:
+                    wayland.Connection().close()
+                    outcome["error"] = None
+                except wayland.WaylandError as exc:
+                    outcome["error"] = exc
+
+            env = {"XDG_RUNTIME_DIR": tmp, "WAYLAND_DISPLAY": path}
+            try:
+                with mock.patch.dict(os.environ, env), mock.patch.object(wayland, "ROUNDTRIP_S", 0.3):
+                    start = time.monotonic()
+                    # In a thread, so a handshake that hangs fails the test
+                    # instead of hanging the suite.
+                    thread = threading.Thread(target=connect, daemon=True)
+                    thread.start()
+                    thread.join(5)
+                    took = time.monotonic() - start
+                self.assertFalse(thread.is_alive(), "the handshake is still waiting")
+                self.assertIsInstance(outcome["error"], wayland.WaylandError)
+                self.assertEqual(outcome["error"].errno, errno.ETIMEDOUT)
+                self.assertLess(took, 2)
+            finally:
+                server.close()
 
 
 if __name__ == "__main__":

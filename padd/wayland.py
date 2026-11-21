@@ -28,6 +28,9 @@ from .codes import code
 KEYBOARD_MANAGER = "zwp_virtual_keyboard_manager_v1"
 POINTER_MANAGER = "zwlr_virtual_pointer_manager_v1"
 
+# How long the compositor has to answer a roundtrip, the handshake included.
+ROUNDTRIP_S = 2.0
+
 # An ordinary US layout by name; the compositor's xkbcommon resolves the
 # includes from the system's XKB data. The keycodes are evdev codes + 8, so a
 # KEY_* code goes out as it is, and media keys come from inet(evdev).
@@ -100,12 +103,15 @@ class Connection:
         except OSError as exc:
             raise WaylandError(exc.errno, f"compositor connection lost: {exc}") from exc
 
-    def _read(self, block: bool) -> None:
-        self.sock.setblocking(block)
+    def _read(self, block: bool, timeout: float | None = None) -> None:
+        """Read what has come in; blocking, wait `timeout` seconds at most."""
+        self.sock.settimeout(timeout if block else 0.0)
         try:
             data = self.sock.recv(65536)
         except BlockingIOError:
             return
+        except TimeoutError:
+            raise WaylandError(errno.ETIMEDOUT, "the compositor did not answer") from None
         except OSError as exc:
             raise WaylandError(exc.errno, f"compositor connection lost: {exc}") from exc
         finally:
@@ -144,13 +150,20 @@ class Connection:
         return finished
 
     def roundtrip(self) -> None:
+        """Wait until the compositor has handled everything sent so far.
+
+        Each read waits only as long as is left of ROUNDTRIP_S, so a
+        compositor that takes the connection and never answers fails the
+        start-up (and the shell restarts the daemon) instead of hanging it.
+        """
         callback = self._new_id()
         self._request(1, 0, struct.pack("<I", callback))  # wl_display.sync
-        deadline = time.monotonic() + 2.0
+        deadline = time.monotonic() + ROUNDTRIP_S
         while not self._dispatch(callback):
-            if time.monotonic() > deadline:
+            left = deadline - time.monotonic()
+            if left <= 0:
                 raise WaylandError(errno.ETIMEDOUT, "the compositor did not answer")
-            self._read(block=True)
+            self._read(block=True, timeout=left)
 
     def drain(self) -> None:
         """Read whatever the compositor sent, so its queue never backs up."""
