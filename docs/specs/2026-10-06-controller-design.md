@@ -33,6 +33,11 @@ The daemon is the only reader of the pad. It speaks newline-delimited JSON
 on stdout and reads commands on stdin, so the service talks to it without
 pid files or signals. Every config change goes through `padctl`, which
 writes the file atomically; the service then tells the daemon to reload.
+Each writer (a `padctl` edit, the daemon saving the switch) reads, changes
+and writes the file while holding an advisory `flock` on a lock file beside
+the real file (`.config.json.lock`, next to a symlink's target), so one
+never writes back what another just changed. A writer waits five seconds
+for the lock at most, then fails with an error.
 
 ## 3. Buttons
 

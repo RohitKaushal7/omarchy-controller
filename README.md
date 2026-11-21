@@ -181,8 +181,9 @@ omarchy-shell dev.reuk.controller reload
 
 It reads the controller's `/dev/input` node, and creates a virtual keyboard
 and a virtual pointer through the compositor, which go away when the shell
-stops. It writes only its own config file, and changes no Hyprland or Omarchy
-setting. Games still see the controller unless `device.grab` is on; switch
+stops. It writes only its own config file, and the empty
+`.config.json.lock` beside it that keeps two saves from crossing, and
+changes no Hyprland or Omarchy setting. Games still see the controller unless `device.grab` is on; switch
 the plugin off with Guide + Back while you play.
 
 ## Development

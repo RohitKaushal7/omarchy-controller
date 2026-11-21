@@ -6,9 +6,13 @@ See the spec, section 4, for the format.
 from __future__ import annotations
 
 import copy
+import fcntl
 import json
 import os
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,6 +24,9 @@ from .pad import BUTTONS, STICKS
 # default added or changed in an update still reaches the user.
 VERSION = 2
 VERSIONS = (1, 2)
+
+# How long a writer waits for another to finish with the file, at most.
+LOCK_WAIT_S = 5.0
 
 CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 DEFAULT_PATH = CONFIG_HOME / "dev.reuk.controller" / "config.json"
@@ -565,6 +572,8 @@ class Config:
         return self.to_json()
 
     def save(self, full: bool = False) -> Path:
+        """Write this config out. Hold editing() from before the load that
+        made it, or a write made meanwhile (the switch) is undone."""
         data = self.to_json() if full else self.file_json()
         return write(self.path, data)
 
@@ -604,25 +613,81 @@ def load_or_off(path: Path | str | None = None) -> tuple[Config, str]:
         return switched_off(target), str(exc)
 
 
+_locks = threading.local()  # lock file -> depth, for the thread holding it
+
+
+def lock_path(path: Path | str) -> Path:
+    """The lock beside the file itself, for a config that is a symlink."""
+    real = Path(os.path.realpath(path))
+    return real.parent / f".{real.name}.lock"
+
+
+@contextmanager
+def editing(path: Path | str | None = None, wait: float | None = None):
+    """Hold the config's lock across a read, a change and the write.
+
+    Every writer (the daemon's switch, each padctl edit) reads the whole
+    file and writes it back; two at once would have the later write undo
+    the earlier. They take turns on an advisory flock of a lock file next
+    to the real file. Held already by this thread, it is held again (a
+    save inside an edit). Waits `wait` seconds (LOCK_WAIT_S) at most, then
+    raises ConfigError, so a stuck writer cannot hang another for good.
+    """
+    target = Path(path or DEFAULT_PATH)
+    lock = lock_path(target)
+    held = _locks.__dict__.setdefault("depth", {})
+    key = str(lock)
+    if held.get(key):
+        held[key] += 1
+        try:
+            yield
+        finally:
+            held[key] -= 1
+        return
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+    try:
+        deadline = time.monotonic() + (LOCK_WAIT_S if wait is None else wait)
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ConfigError(
+                        f"{target} is being saved by something else (lock {lock}); try again"
+                    ) from None
+                time.sleep(0.02)
+        held[key] = 1
+        try:
+            yield
+        finally:
+            del held[key]
+    finally:
+        os.close(fd)  # and with it the lock
+
+
 def save_switch(path: Path | str, on: bool) -> Path:
     """Set `enabled` in the file on disk, leaving the rest as it is there.
 
     For the toggle combo, which flips the switch from the daemon: its copy
     of the config can be older than the file (a hand edit not reloaded yet,
     or one that failed to load), and saving that copy would undo the edit.
-    A file that is not JSON is left alone, and ConfigError says why.
+    A file that is not JSON is left alone, and ConfigError says why. The
+    lock keeps a padctl edit from reading before this and writing after.
     """
     path = Path(path)
-    if not path.exists():
-        return write(path, {"version": VERSION, "enabled": bool(on)})
-    try:
-        raw = json.loads(path.read_text())
-    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
-        raise ConfigError(f"{path} is not valid JSON: {exc}") from None
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{path}: the top level must be an object")
-    raw["enabled"] = bool(on)
-    return write(path, raw)
+    with editing(path):
+        if not path.exists():
+            return write(path, {"version": VERSION, "enabled": bool(on)})
+        try:
+            raw = json.loads(path.read_text())
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
+            raise ConfigError(f"{path} is not valid JSON: {exc}") from None
+        if not isinstance(raw, dict):
+            raise ConfigError(f"{path}: the top level must be an object")
+        raw["enabled"] = bool(on)
+        return write(path, raw)
 
 
 def write(path: Path, data: dict) -> Path:
@@ -630,24 +695,27 @@ def write(path: Path, data: dict) -> Path:
 
     A symlinked config (dotfiles) is written through to its target, so the
     link survives; the temp file sits next to the target for the rename.
+    It takes the lock itself, but whatever read the file to make `data`
+    must hold it from before that read: see editing().
     """
-    path = Path(os.path.realpath(path))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(data, indent=2) + "\n"
-    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".json")
-    try:
-        with os.fdopen(handle, "w") as out:
-            out.write(text)
-            out.flush()
-            os.fsync(out.fileno())
-        os.replace(temp, path)
-    except BaseException:
+    with editing(path):
+        path = Path(os.path.realpath(path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(data, indent=2) + "\n"
+        handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".json")
         try:
-            os.unlink(temp)
-        except OSError:
-            pass
-        raise
-    return path
+            with os.fdopen(handle, "w") as out:
+                out.write(text)
+                out.flush()
+                os.fsync(out.fileno())
+            os.replace(temp, path)
+        except BaseException:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            raise
+        return path
 
 
 def load(path: Path | str | None = None) -> Config:

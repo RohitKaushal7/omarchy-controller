@@ -14,7 +14,7 @@ from . import linux
 from . import pad as padmod
 from .codes import HEADER, CodesUnavailable, table
 from .config import (
-    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, load, load_or_off,
+    CLICKS, DEFAULT_PATH, MOUSE_ACTIONS, Action, Config, ConfigError, editing, load, load_or_off,
 )
 from .output import backend
 
@@ -127,59 +127,66 @@ def _action(args) -> Action:
 
 
 def cmd_bind(args) -> int:
-    config = _config(args)
     slot = "hold" if args.hold else "tap"
-    config.bind(args.layer, args.button, slot, _action(args))
-    # A move: the same action recorded on another button replaces the old one.
-    if args.replace:
-        old_layer, old_button, old_slot = args.replace.split(":")
-        if (old_layer, old_button.upper(), old_slot) != (args.layer, args.button.upper(), slot):
-            config.unbind(old_layer, old_button, old_slot)
-    Config(config.to_json(), config.path)  # validate the result as a whole
-    config.save()
+    action = _action(args)
+    # Each edit reads, changes and writes the file under the lock, so the
+    # daemon's switch, saved meanwhile, is never written over.
+    with editing(args.config):
+        config = _config(args)
+        config.bind(args.layer, args.button, slot, action)
+        # A move: the same action recorded on another button replaces the old one.
+        if args.replace:
+            old_layer, old_button, old_slot = args.replace.split(":")
+            if (old_layer, old_button.upper(), old_slot) != (args.layer, args.button.upper(), slot):
+                config.unbind(old_layer, old_button, old_slot)
+        Config(config.to_json(), config.path)  # validate the result as a whole
+        config.save()
     print(f"bound {args.layer} {args.button.upper()} ({slot})")
     return 0
 
 
 def cmd_unbind(args) -> int:
-    config = _config(args)
     slot = None if args.all else ("hold" if args.hold else "tap")
-    if not config.unbind(args.layer, args.button, slot):
-        return _fail(f"nothing bound to {args.button.upper()} in {args.layer}")
-    config.save()
+    with editing(args.config):
+        config = _config(args)
+        if not config.unbind(args.layer, args.button, slot):
+            return _fail(f"nothing bound to {args.button.upper()} in {args.layer}")
+        config.save()
     print(f"unbound {args.layer} {args.button.upper()}")
     return 0
 
 
 def cmd_set(args) -> int:
     """Set one setting by dotted path, e.g. `padctl set mouse.enabled false`."""
-    config = _config(args)
-    raw = config.to_json()
     try:
         value = json.loads(args.value)
     except json.JSONDecodeError:
         value = args.value
-    node = raw
-    parts = args.key.split(".")
-    for part in parts[:-1]:
-        if not isinstance(node.get(part), dict):
+    with editing(args.config):
+        config = _config(args)
+        raw = config.to_json()
+        node = raw
+        parts = args.key.split(".")
+        for part in parts[:-1]:
+            if not isinstance(node.get(part), dict):
+                return _fail(f"no setting {args.key}")
+            node = node[part]
+        if parts[-1] not in node or parts[-1] == "layers":
             return _fail(f"no setting {args.key}")
-        node = node[part]
-    if parts[-1] not in node or parts[-1] == "layers":
-        return _fail(f"no setting {args.key}")
-    node[parts[-1]] = value
-    Config(raw, config.path).save()
+        node[parts[-1]] = value
+        Config(raw, config.path).save()
     print(f"{args.key} = {json.dumps(value)}")
     return 0
 
 
 def cmd_init(args) -> int:
     path = Path(args.config or DEFAULT_PATH)
-    if path.exists() and not args.force:
-        return _fail(f"{path} exists (--force to overwrite)")
-    # Every default written out, to edit by hand. The next save from the
-    # panel or padctl keeps only what was changed.
-    Config({}, path).save(full=True)
+    with editing(path):
+        if path.exists() and not args.force:
+            return _fail(f"{path} exists (--force to overwrite)")
+        # Every default written out, to edit by hand. The next save from the
+        # panel or padctl keeps only what was changed.
+        Config({}, path).save(full=True)
     print(f"wrote {path}")
     return 0
 

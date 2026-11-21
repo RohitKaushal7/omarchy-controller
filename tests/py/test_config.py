@@ -1,14 +1,23 @@
 """Config validation, editing and round trips; key parsing; mouse maths."""
 
 import copy
+import fcntl
 import json
+import os
+import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from helpers import ROOT  # noqa: F401
-from padd.config import Action, Config, ConfigError, load, load_or_off, save_switch
+from padd import cli
+from padd import config as config_mod
+from padd.config import (
+    Action, Config, ConfigError, editing, load, load_or_off, lock_path, save_switch,
+)
 from padd.keymap import BadKeys, combo
 from padd.output import NOTCH, REL_WHEEL, REL_WHEEL_HI_RES, REL_X, REL_Y, Mouse, shape
 from padd import linux
@@ -203,13 +212,104 @@ class TestSwitchSave(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 save_switch(path, False)
             self.assertEqual(path.read_text(), '{"enabled": true,, }')
-            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["c.json"], "temp file left")
+            left = sorted(p.name for p in Path(tmp).iterdir())
+            self.assertEqual(left, [".c.json.lock", "c.json"], "temp file left")
 
     def test_no_file_yet(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "sub" / "c.json"
             save_switch(path, False)
             self.assertFalse(load(path).enabled)
+
+
+class TestEditLock(unittest.TestCase):
+    """Writers take turns: each reads, changes and writes under one lock."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "c.json"
+        self.path.write_text(json.dumps({"version": 2, "enabled": True}))
+
+    def test_an_edit_never_undoes_the_switch(self):
+        # A padctl edit has read the file (switch on) when the toggle combo
+        # saves the switch off. Unlocked, the edit then wrote "on" back.
+        loaded, go = threading.Event(), threading.Event()
+        real_config = cli._config
+
+        def slow_config(args):
+            config = real_config(args)
+            loaded.set()
+            go.wait(5)
+            return config
+
+        results = {}
+
+        def edit():
+            with mock.patch.object(cli, "_config", slow_config), mock.patch("builtins.print"):
+                results["edit"] = cli.main(["--config", str(self.path), "bind", "text", "Y",
+                                            "--keys", "CTRL+SHIFT+Z", "--label", "Redo"])
+
+        editor = threading.Thread(target=edit)
+        editor.start()
+        self.assertTrue(loaded.wait(5))
+        switch = threading.Thread(target=lambda: save_switch(self.path, False))
+        switch.start()
+        time.sleep(0.3)
+        self.assertTrue(switch.is_alive(), "the switch was saved in the middle of an edit")
+        go.set()
+        editor.join(10)
+        switch.join(10)
+        self.assertEqual(results["edit"], 0)
+        config = load(self.path)
+        self.assertFalse(config.enabled, "the edit undid the switch")
+        self.assertEqual(config.layer("text").bindings["Y"].tap.label, "Redo", "the edit was lost")
+
+    def test_padctl_waits_for_the_lock(self):
+        lock = os.open(lock_path(self.path), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            proc = subprocess.Popen(
+                [str(ROOT / "bin" / "padctl"), "--config", str(self.path), "set", "mouse.speed", "900"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+            )
+            time.sleep(0.5)
+            self.assertIsNone(proc.poll(), "padctl wrote while the lock was held")
+            during = self.path.read_text()
+        finally:
+            os.close(lock)
+        _, err = proc.communicate(timeout=10)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertEqual(json.loads(during), {"version": 2, "enabled": True})
+        self.assertEqual(load(self.path).mouse["speed"], 900)
+
+    def test_a_held_lock_is_waited_for_only_so_long(self):
+        lock = os.open(lock_path(self.path), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            start = time.monotonic()
+            with mock.patch.object(config_mod, "LOCK_WAIT_S", 0.2):
+                with self.assertRaises(ConfigError) as caught:
+                    save_switch(self.path, False)
+            self.assertLess(time.monotonic() - start, 2)
+            self.assertIn("being saved by something else", str(caught.exception))
+            self.assertTrue(json.loads(self.path.read_text())["enabled"], "written without the lock")
+        finally:
+            os.close(lock)
+
+    def test_held_again_by_the_same_writer(self):
+        with editing(self.path, wait=0.2):
+            save_switch(self.path, False)  # would time out if not reentrant
+            Config({}, self.path).save()
+        self.assertTrue(load(self.path).enabled)
+
+    def test_the_lock_sits_beside_a_symlinked_config_target(self):
+        real = Path(self.tmp.name) / "dotfiles" / "config.json"
+        real.parent.mkdir()
+        real.write_text("{}")
+        link = Path(self.tmp.name) / "link.json"
+        link.symlink_to(real)
+        self.assertEqual(lock_path(link), real.parent / ".config.json.lock")
 
 
 class TestBrokenFile(unittest.TestCase):
